@@ -1,0 +1,10 @@
+{
+  "name": "Aether Messenger",
+  "description": "Futuristic white-label real-time messaging, audio/video calling, and collaboration platform.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "notifications"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

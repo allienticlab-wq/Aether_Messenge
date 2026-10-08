@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#090d16"/>
+  <defs>
+    <linearGradient id="aetherGlow" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="128" y1="128" x2="384" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.2"/>
+    </linearGradient>
+    <filter id="neonBlur" x="0" y="0" width="512" height="512" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <!-- Background subtle aura -->
+  <circle cx="256" cy="256" r="160" fill="url(#aetherGlow)" opacity="0.12" filter="url(#neonBlur)"/>
+  <!-- Outer orbital ring -->
+  <circle cx="256" cy="256" r="148" stroke="url(#ringGrad)" stroke-width="6" stroke-dasharray="16 10"/>
+  <!-- Central pulse wave & nodes -->
+  <path d="M168 256h40l28-56 40 112 32-56h36" stroke="url(#aetherGlow)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Inner core node -->
+  <circle cx="256" cy="256" r="28" fill="#090d16" stroke="url(#aetherGlow)" stroke-width="8"/>
+  <circle cx="256" cy="256" r="10" fill="#22d3ee"/>
+</svg>
