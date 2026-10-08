@@ -67,6 +67,88 @@ function requireRole(allowedRoles: UserRole[]) {
 // 1. AUTHENTICATION & SESSIONS
 // ==============================================================================
 
+apiRouter.post('/auth/firebase-sync', (req: Request, res: Response) => {
+  const { uid, email, phoneNumber, displayName, photoURL, providerId } = req.body;
+  if (!uid && !phoneNumber && !email) {
+    return res.status(400).json({ error: 'UID, phone, or email is required.' });
+  }
+
+  // 1. Try finding by email, phone, or existing ID
+  let user = email ? db.getUserByEmail(email) : undefined;
+  if (!user && phoneNumber) {
+    user = db.getUserByPhone(phoneNumber);
+  }
+  if (!user && uid) {
+    user = db.getUserById(uid);
+  }
+
+  const now = new Date().toISOString();
+
+  if (!user) {
+    // Generate unique username from email, phone, or random suffix
+    const baseUsername = email
+      ? email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase()
+      : phoneNumber
+      ? `user_${phoneNumber.replace(/\D/g, '').slice(-6)}`
+      : `user_${Math.random().toString(36).substring(2, 7)}`;
+
+    let username = baseUsername;
+    let counter = 1;
+    while (db.getUserByUsername(username)) {
+      username = `${baseUsername}${counter++}`;
+    }
+
+    const defaultName = displayName || (email ? email.split('@')[0] : phoneNumber || 'Aether Member');
+    const avatar = photoURL || `https://images.unsplash.com/photo-1535713875002?auto=format&fit=crop&w=200&h=200&q=80`;
+
+    const newUser = db.createUser({
+      email: email || undefined,
+      phone: phoneNumber || undefined,
+      username,
+      displayName: defaultName,
+      password: crypto.randomBytes(16).toString('hex'),
+    });
+
+    user = newUser;
+    user.avatarUrl = avatar;
+    if (phoneNumber) user.phoneVerified = true;
+    if (email) user.emailVerified = true;
+    db.ensureUserDefaultChats(user.id);
+  } else {
+    // Update verification flags
+    if (phoneNumber) {
+      user.phone = phoneNumber;
+      user.phoneVerified = true;
+    }
+    if (email) {
+      user.email = email;
+      user.emailVerified = true;
+    }
+    if (photoURL && (!user.avatarUrl || user.avatarUrl.includes('images.unsplash.com/photo-1535713875002'))) {
+      user.avatarUrl = photoURL;
+    }
+    if (displayName && (!user.displayName || user.displayName === 'User')) {
+      user.displayName = displayName;
+    }
+    db.ensureUserDefaultChats(user.id);
+  }
+
+  user.isOnline = true;
+  user.lastSeen = now;
+
+  const session = db.createSession(user.id, req.headers['user-agent'], req.ip);
+  db.addAuditLog(user.id, user.displayName, 'FIREBASE_AUTH_SYNC', 'session', session.id, {
+    provider: providerId || 'firebase',
+    phone: phoneNumber,
+    email,
+  });
+
+  res.json({
+    user: db.toPublicProfile(user),
+    session,
+  });
+});
+
 apiRouter.post('/auth/register', (req: Request, res: Response) => {
   const { email, username, displayName, password, phone } = req.body;
   if (!username || !displayName || !password) {

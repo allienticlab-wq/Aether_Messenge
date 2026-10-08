@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile with verification status and credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "role": { "type": "string" },
+        "verificationStatus": { "type": "string" },
+        "verificationCategory": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "displayName", "username", "role", "createdAt"]
+    },
+    "chat": {
+      "title": "Chat",
+      "description": "Chat conversation session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "type", "createdAt", "updatedAt"]
+    },
+    "message": {
+      "title": "Message",
+      "description": "Individual chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "chatId", "senderId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User profiles"
+    },
+    "/chats/{chatId}": {
+      "schema": "chat",
+      "description": "Chats collection"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "message",
+      "description": "Messages inside chats"
+    }
+  }
+}

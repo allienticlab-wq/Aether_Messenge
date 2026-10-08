@@ -19,9 +19,13 @@ import {
   LogOut,
   ShieldCheck,
   RefreshCw,
-  KeyRound
+  KeyRound,
+  Globe
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
+import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
+import { sendFirebasePhoneOtp } from '../../lib/firebase.js';
+import type { ConfirmationResult } from 'firebase/auth';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -56,15 +60,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     register,
     requestPhoneOtp,
     verifyPhoneOtp,
+    firebasePhoneSignIn,
+    firebaseEmailLogin,
+    firebaseEmailRegister,
+    firebaseGoogleLogin,
+    firebaseSendPasswordReset,
     updateProfile,
     logout
   } = useAuth();
   const { branding } = useBranding();
 
-  // Mode: 'phone' | 'password' | 'register'
-  const [authMode, setAuthMode] = useState<'phone' | 'password' | 'register'>('phone');
+  // Mode: 'phone' | 'email' | 'password'
+  const [authMode, setAuthMode] = useState<'phone' | 'email' | 'password'>('phone');
 
-  // Phone flow steps: 1 = Enter phone, 2 = Enter OTP, 3 = Complete profile (optional)
+  // Phone flow steps: 1 = Enter phone, 2 = Enter OTP, 3 = Complete profile
   const [phoneStep, setPhoneStep] = useState<1 | 2 | 3>(1);
 
   // Phone input states
@@ -77,25 +86,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [countdown, setCountdown] = useState(45);
   const [canResend, setCanResend] = useState(false);
 
+  // Firebase Phone Auth ConfirmationResult
+  const [firebaseConfirmationResult, setFirebaseConfirmationResult] = useState<ConfirmationResult | null>(null);
+
   // Profile setup states
   const [profileName, setProfileName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoUploaderOpen, setPhotoUploaderOpen] = useState(false);
 
-  // Password login states (Strictly standard user sign-in: NO ADMIN MENTION)
+  // Email Auth states (Firebase)
+  const [emailTab, setEmailTab] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [emailInput, setEmailInput] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [emailDisplayName, setEmailDisplayName] = useState('');
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
+
+  // Password login states (for seeded admin / test accounts)
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [requireMfa, setRequireMfa] = useState(false);
-
-  // Registration states
-  const [regName, setRegName] = useState('');
-  const [regUsername, setRegUsername] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [regPhone, setRegPhone] = useState('');
-  const [showRegPassword, setShowRegPassword] = useState(false);
 
   // Status & feedback
   const [error, setError] = useState<string | null>(null);
@@ -123,17 +134,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   const fullPhoneString = `${selectedCountry.code}${phoneNumber.replace(/\D/g, '')}`;
 
-  // Reset errors when switching modes
-  const handleModeChange = (mode: 'phone' | 'password' | 'register') => {
+  const handleModeChange = (mode: 'phone' | 'email' | 'password') => {
     setAuthMode(mode);
     setError(null);
     setSuccessMsg(null);
   };
 
-  // PHONE FLOW: Request OTP
+  // ---------------------------------------------------------------------------
+  // 1. FIREBASE PHONE AUTHENTICATION (SMS OTP)
+  // Follows: https://firebase.google.com/docs/auth/web/phone-auth
+  // ---------------------------------------------------------------------------
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
     const cleanDigits = phoneNumber.replace(/\D/g, '');
     if (cleanDigits.length < 6) {
       setError('Please enter a valid phone number.');
@@ -142,35 +156,70 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
     setIsSubmitting(true);
     try {
-      const res = await requestPhoneOtp(fullPhoneString);
-      if (!res.success) {
-        setError(res.error || 'Failed to send verification SMS.');
+      // 1. Attempt Real Firebase Web Phone Auth with RecaptchaVerifier
+      try {
+        const confirmationResult = await sendFirebasePhoneOtp(fullPhoneString, 'recaptcha-container');
+        setFirebaseConfirmationResult(confirmationResult);
+        setPhoneStep(2);
+        setCountdown(60);
+        setCanResend(false);
+        setOtpDigits(['', '', '', '', '', '']);
+        setSuccessMsg(`SMS verification code dispatched via Firebase Phone Auth to ${fullPhoneString}.`);
         return;
+      } catch (fbErr: any) {
+        console.warn('Firebase Phone Auth notice:', fbErr?.message || fbErr);
+        // If Firebase phone auth is constrained (e.g. quota, domain whitelist in preview),
+        // we use backend fallback to generate verified OTP code so users are never stuck.
+        const res = await requestPhoneOtp(fullPhoneString);
+        if (!res.success) {
+          setError(res.error || fbErr?.message || 'Failed to dispatch phone verification code.');
+          return;
+        }
+        if (res.previewCode) {
+          setPreviewOtp(res.previewCode);
+        }
+        setPhoneStep(2);
+        setCountdown(45);
+        setCanResend(false);
+        setOtpDigits(['', '', '', '', '', '']);
       }
-      if (res.previewCode) {
-        setPreviewOtp(res.previewCode);
-      }
-      setCountdown(45);
-      setCanResend(false);
-      setPhoneStep(2);
-      // Clear previous digits
-      setOtpDigits(['', '', '', '', '', '']);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // PHONE FLOW: Verify 6-digit OTP
   const handleVerifyOtp = async () => {
     const fullCode = otpDigits.join('');
     if (fullCode.length < 6) {
-      setError('Please enter the full 6-digit verification code.');
+      setError('Please enter the complete 6-digit verification code.');
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
     try {
+      // If we have a Firebase ConfirmationResult, verify with Firebase Auth
+      if (firebaseConfirmationResult) {
+        const result = await firebasePhoneSignIn(firebaseConfirmationResult, fullCode, {
+          displayName: profileName.trim() || undefined,
+          avatarUrl: avatarUrl || undefined,
+        });
+
+        if (!result.success) {
+          setError(result.error || 'Verification code is invalid.');
+          return;
+        }
+
+        if (!result.user?.displayName || result.user.displayName === 'Aether Member') {
+          setPhoneStep(3);
+        } else {
+          setSuccessMsg('Phone verified successfully!');
+          setTimeout(() => onClose(), 600);
+        }
+        return;
+      }
+
+      // Backend fallback verification
       const res = await verifyPhoneOtp(fullPhoneString, fullCode, {
         displayName: profileName.trim() || undefined,
         avatarUrl: avatarUrl || undefined,
@@ -185,16 +234,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         setPhoneStep(3);
       } else {
         setSuccessMsg('Signed in successfully!');
-        setTimeout(() => {
-          onClose();
-        }, 600);
+        setTimeout(() => onClose(), 600);
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // PHONE FLOW: Finish profile
   const handleFinishProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileName.trim()) {
@@ -210,17 +256,107 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         avatarUrl: avatarUrl || undefined,
       });
       setSuccessMsg('Profile created successfully!');
-      setTimeout(() => {
-        onClose();
-      }, 600);
+      setTimeout(() => onClose(), 600);
     } catch {
-      setError('Could not update profile info.');
+      setError('Could not update profile information.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // PASSWORD SIGN IN: Standard discreet login (No mention of admin)
+  // ---------------------------------------------------------------------------
+  // 2. FIREBASE EMAIL AUTHENTICATION
+  // ---------------------------------------------------------------------------
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim() || !emailPassword.trim()) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await firebaseEmailLogin(emailInput.trim(), emailPassword);
+      if (!res.success) {
+        setError(res.error || 'Email sign-in failed.');
+        return;
+      }
+      setSuccessMsg('Signed in successfully with Firebase Email Auth!');
+      setTimeout(() => onClose(), 600);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEmailSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim() || !emailPassword.trim() || !emailDisplayName.trim()) {
+      setError('Please provide your name, email, and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await firebaseEmailRegister(
+        emailInput.trim(),
+        emailPassword,
+        emailDisplayName.trim(),
+        avatarUrl || undefined
+      );
+      if (!res.success) {
+        setError(res.error || 'Registration failed.');
+        return;
+      }
+      setSuccessMsg('Account created with Firebase Email Auth!');
+      setTimeout(() => onClose(), 600);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim()) {
+      setError('Please enter your email address to receive reset instructions.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await firebaseSendPasswordReset(emailInput.trim());
+      if (!res.success) {
+        setError(res.error || 'Failed to send password reset email.');
+        return;
+      }
+      setSuccessMsg(`Password reset link sent to ${emailInput.trim()}. Check your inbox.`);
+      setEmailTab('signin');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await firebaseGoogleLogin();
+      if (!res.success) {
+        setError(res.error || 'Google sign-in was cancelled or failed.');
+        return;
+      }
+      setSuccessMsg('Signed in with Google!');
+      setTimeout(() => onClose(), 600);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // 3. SEEDED ACCOUNT PASSWORD LOGIN
+  // ---------------------------------------------------------------------------
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginIdentifier.trim() || !loginPassword.trim()) {
@@ -240,61 +376,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       if (!res.success) {
         if (res.requireMfa) {
           setRequireMfa(true);
-          setError('Two-Factor Authentication is required. Please enter your 6-digit authenticator code.');
+          setError('Two-Factor Authentication is required. Enter your 6-digit code.');
           return;
         }
-        setError(res.error || 'Invalid username or password.');
+        setError(res.error || 'Invalid credentials.');
         return;
       }
 
       setSuccessMsg('Signed in successfully!');
-      setTimeout(() => {
-        onClose();
-      }, 500);
+      setTimeout(() => onClose(), 600);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // REGISTRATION / SIGN UP
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!regName.trim() || !regUsername.trim() || !regPassword.trim()) {
-      setError('Please fill in your name, username, and password.');
-      return;
-    }
-
-    if (regPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      const res = await register({
-        displayName: regName.trim(),
-        username: regUsername.trim().toLowerCase(),
-        email: regEmail.trim() || undefined,
-        password: regPassword,
-        phone: regPhone.trim() || undefined,
-      });
-
-      if (!res.success) {
-        setError(res.error || 'Failed to create account.');
-        return;
-      }
-
-      setSuccessMsg('Account created successfully!');
-      setTimeout(() => {
-        onClose();
-      }, 600);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // OTP Input keyboard navigation
+  // OTP Input handlers
   const handleDigitChange = (index: number, val: string) => {
     const char = val.replace(/\D/g, '').slice(-1);
     const updated = [...otpDigits];
@@ -307,9 +403,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     }
 
     if (updated.every((d) => d !== '') && index === 5) {
-      setTimeout(() => {
-        handleVerifyOtp();
-      }, 100);
+      setTimeout(() => handleVerifyOtp(), 100);
     }
   };
 
@@ -328,22 +422,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       while (updated.length < 6) updated.push('');
       setOtpDigits(updated);
       if (pasted.length === 6) {
-        setTimeout(() => {
-          handleVerifyOtp();
-        }, 150);
+        setTimeout(() => handleVerifyOtp(), 150);
       }
-    }
-  };
-
-  // Avatar upload simulation
-  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setAvatarUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -355,7 +435,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md select-none animate-in fade-in duration-150 overflow-y-auto">
-      {/* Modal Dialog Card matching internal App UI */}
+      {/* Container for invisible Firebase reCAPTCHA */}
+      <div id="recaptcha-container" />
+
+      {/* Modal Dialog Card */}
       <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
@@ -371,7 +454,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                {currentUser ? 'Account & Session' : 'Secure Authentication'}
+                {currentUser ? 'Active Profile & Session' : 'Firebase Authentication'}
               </p>
             </div>
           </div>
@@ -385,14 +468,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* If Already Logged In: View Account Status Banner */}
+        {/* If Already Logged In */}
         {currentUser ? (
           <div className="p-6 space-y-5">
-            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3">
+            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3.5">
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.displayName}
-                className="w-12 h-12 rounded-xl object-cover border border-slate-700"
+                className="w-14 h-14 rounded-2xl object-cover border border-slate-700 shadow"
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 font-bold text-sm text-slate-100 truncate">
@@ -431,13 +514,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800/50 border border-slate-700 text-slate-300 font-medium text-xs transition flex items-center justify-center gap-1.5"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span>Sign Out of Account</span>
+                <span>Sign Out</span>
               </button>
             </div>
           </div>
         ) : (
           <>
-            {/* Tab Switcher - Exactly matching internal app UI styling */}
+            {/* Tab Switcher: Phone OTP | Email | Password */}
             <div className="px-6 pt-4">
               <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
                 <button
@@ -450,7 +533,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                   }`}
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>Phone</span>
+                  <span>Phone OTP</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleModeChange('email')}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-medium transition ${
+                    authMode === 'email'
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Email Auth</span>
                 </button>
 
                 <button
@@ -464,19 +560,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 >
                   <Lock className="w-3.5 h-3.5" />
                   <span>Password</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleModeChange('register')}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-medium transition ${
-                    authMode === 'register'
-                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>Sign Up</span>
                 </button>
               </div>
             </div>
@@ -505,7 +588,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               )}
 
               {/* ============================================================== */}
-              {/* 1. PHONE OTP AUTHENTICATION                                    */}
+              {/* 1. FIREBASE PHONE OTP FLOW                                      */}
               {/* ============================================================== */}
               {authMode === 'phone' && (
                 <div>
@@ -513,18 +596,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                   {phoneStep === 1 && (
                     <form onSubmit={handlePhoneSubmit} className="space-y-4">
                       <div>
-                        <div className="text-xs font-semibold text-slate-200 mb-1">
-                          Sign In with Phone Number
+                        <div className="text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Firebase Phone Authentication</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                          Enter your phone number to receive a secure SMS verification code.
+                          Enter your mobile number to receive a secure Firebase SMS verification OTP.
                         </p>
                       </div>
 
                       {/* Country Dropdown & Input */}
                       <div className="space-y-2">
                         <label className="text-[11px] text-slate-400 font-medium block">
-                          Country & Region
+                          Country & Region Code
                         </label>
                         <div className="relative">
                           <button
@@ -604,7 +688,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <>
-                              <span>Send Verification Code</span>
+                              <span>Send Verification SMS</span>
                               <ArrowRight className="w-3.5 h-3.5" />
                             </>
                           )}
@@ -612,10 +696,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                       </div>
 
                       <p className="text-[10px] text-slate-500 text-center leading-relaxed">
-                        By continuing, you agree to the{' '}
-                        <span className="text-cyan-400 hover:underline cursor-pointer">Terms of Service</span>{' '}
-                        and{' '}
-                        <span className="text-cyan-400 hover:underline cursor-pointer">Privacy Policy</span>.
+                        Protected by Firebase reCAPTCHA verification. Standard SMS carrier charges may apply.
                       </p>
                     </form>
                   )}
@@ -641,11 +722,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                           </button>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          We sent a code to <span className="font-mono text-cyan-300">{fullPhoneString}</span>.
+                          Sent to <span className="font-mono text-cyan-300">{fullPhoneString}</span> via Firebase Phone Auth.
                         </p>
                       </div>
 
-                      {/* Auto-fill Preview Code helper badge (Click to fill) */}
+                      {/* Auto-fill Preview Code helper badge (if available) */}
                       {previewOtp && (
                         <button
                           type="button"
@@ -655,10 +736,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                             setError(null);
                           }}
                           className="w-full py-1.5 px-3 bg-cyan-950/40 border border-cyan-800/50 hover:bg-cyan-900/40 rounded-xl text-center text-[11px] transition text-cyan-300 flex items-center justify-center gap-1.5"
-                          title="Click to automatically fill preview code"
+                          title="Click to automatically fill code"
                         >
                           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Preview code: <strong className="font-mono tracking-widest text-white">{previewOtp}</strong> (Tap to fill)</span>
+                          <span>Preview OTP: <strong className="font-mono tracking-widest text-white">{previewOtp}</strong> (Tap to fill)</span>
                         </button>
                       )}
 
@@ -716,7 +797,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     </div>
                   )}
 
-                  {/* Step 3: Complete profile (for new phone users) */}
+                  {/* Step 3: Complete profile (New Photo System integration) */}
                   {phoneStep === 3 && (
                     <form onSubmit={handleFinishProfile} className="space-y-4">
                       <div>
@@ -724,37 +805,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                           Complete Your Profile
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                          Choose a display name and optional profile photo for your contacts to see.
+                          Upload a photo, snap one with your camera, or pick an avatar preset.
                         </p>
                       </div>
 
-                      {/* Avatar Selection */}
-                      <div className="flex items-center gap-3">
-                        <div className="relative w-14 h-14 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
+                      {/* Photo Studio Integration */}
+                      <div className="flex items-center gap-3.5 p-3.5 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                        <div className="relative w-16 h-16 rounded-full bg-slate-900 border-2 border-cyan-500/40 overflow-hidden flex items-center justify-center shrink-0 shadow">
                           {avatarUrl ? (
                             <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                           ) : (
-                            <User className="w-6 h-6 text-slate-600" />
+                            <User className="w-7 h-7 text-slate-600" />
                           )}
                         </div>
-                        <div className="space-y-1">
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleAvatarSelect}
-                            accept="image/*"
-                            className="hidden"
-                          />
+                        <div className="space-y-1.5 flex-1">
                           <button
                             type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition flex items-center gap-1.5"
+                            onClick={() => setPhotoUploaderOpen(true)}
+                            className="px-3 py-1.5 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-800/60 text-cyan-300 text-xs rounded-xl transition flex items-center gap-1.5 font-semibold"
                           >
                             <Camera className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>Upload Photo</span>
+                            <span>{avatarUrl ? 'Change Photo' : 'Upload or Take Photo'}</span>
                           </button>
                           <span className="text-[10px] text-slate-500 block">
-                            PNG, JPG or WEBP (Max 2MB)
+                            Camera snapshot, local upload, or 3D presets available
                           </span>
                         </div>
                       </div>
@@ -784,7 +858,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <>
-                              <span>Finish Setup</span>
+                              <span>Enter Aether</span>
                               <Check className="w-3.5 h-3.5" />
                             </>
                           )}
@@ -796,28 +870,288 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               )}
 
               {/* ============================================================== */}
-              {/* 2. PASSWORD SIGN IN (Standard Sign In - NO ADMIN MENTION)     */}
+              {/* 2. FIREBASE EMAIL AUTHENTICATION                                */}
+              {/* ============================================================== */}
+              {authMode === 'email' && (
+                <div className="space-y-4">
+                  {/* Email Subtabs */}
+                  <div className="flex border-b border-slate-800 pb-2 gap-4 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailTab('signin');
+                        setError(null);
+                      }}
+                      className={`font-semibold transition ${
+                        emailTab === 'signin' ? 'text-cyan-400 border-b-2 border-cyan-400 pb-1' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailTab('signup');
+                        setError(null);
+                      }}
+                      className={`font-semibold transition ${
+                        emailTab === 'signup' ? 'text-cyan-400 border-b-2 border-cyan-400 pb-1' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Create Account
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailTab('forgot');
+                        setError(null);
+                      }}
+                      className={`font-semibold transition ${
+                        emailTab === 'forgot' ? 'text-cyan-400 border-b-2 border-cyan-400 pb-1' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Reset Password
+                    </button>
+                  </div>
+
+                  {/* Sign In with Firebase Email */}
+                  {emailTab === 'signin' && (
+                    <form onSubmit={handleEmailSignIn} className="space-y-3.5">
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Email Address
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <Mail className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type="email"
+                            placeholder="name@example.com"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            autoFocus
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Password
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <Lock className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type={showEmailPassword ? 'text' : 'password'}
+                            placeholder="••••••••••••"
+                            value={emailPassword}
+                            onChange={(e) => setEmailPassword(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailPassword(!showEmailPassword)}
+                            className="text-slate-500 hover:text-slate-300 ml-1"
+                          >
+                            {showEmailPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 space-y-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !emailInput.trim() || !emailPassword.trim()}
+                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
+                        >
+                          {isSubmitting ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <span>Sign In with Firebase Email</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleGoogleSignIn}
+                          disabled={isSubmitting}
+                          className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs transition flex items-center justify-center gap-2 border border-slate-700"
+                        >
+                          <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Continue with Google</span>
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Create Account with Firebase Email */}
+                  {emailTab === 'signup' && (
+                    <form onSubmit={handleEmailSignUp} className="space-y-3.5">
+                      {/* Photo Studio avatar picker */}
+                      <div className="flex items-center gap-3 p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl">
+                        <div className="relative w-12 h-12 rounded-full bg-slate-900 border border-cyan-500/40 overflow-hidden flex items-center justify-center shrink-0">
+                          {avatarUrl ? (
+                            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                          ) : (
+                            <User className="w-5 h-5 text-slate-600" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoUploaderOpen(true)}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition flex items-center gap-1.5"
+                        >
+                          <Camera className="w-3 h-3 text-cyan-400" />
+                          <span>{avatarUrl ? 'Change Photo' : 'Select Photo'}</span>
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Full Name
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <User className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type="text"
+                            placeholder="Your Display Name"
+                            value={emailDisplayName}
+                            onChange={(e) => setEmailDisplayName(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Email Address
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <Mail className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type="email"
+                            placeholder="name@example.com"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Password (Min 6 characters)
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <Lock className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type={showEmailPassword ? 'text' : 'password'}
+                            placeholder="••••••••••••"
+                            value={emailPassword}
+                            onChange={(e) => setEmailPassword(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            required
+                            minLength={6}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailPassword(!showEmailPassword)}
+                            className="text-slate-500 hover:text-slate-300 ml-1"
+                          >
+                            {showEmailPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !emailInput.trim() || !emailPassword.trim() || !emailDisplayName.trim()}
+                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
+                        >
+                          {isSubmitting ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <span>Register with Firebase</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Reset Password */}
+                  {emailTab === 'forgot' && (
+                    <form onSubmit={handleForgotPassword} className="space-y-3.5">
+                      <p className="text-[11px] text-slate-400">
+                        Enter your registered email address and Firebase Auth will send you a password reset link.
+                      </p>
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
+                          Email Address
+                        </label>
+                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
+                          <Mail className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                          <input
+                            type="email"
+                            placeholder="name@example.com"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !emailInput.trim()}
+                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
+                        >
+                          {isSubmitting ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <span>Send Password Reset Link</span>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* ============================================================== */}
+              {/* 3. SEEDED ACCOUNT PASSWORD SIGN IN                             */}
               {/* ============================================================== */}
               {authMode === 'password' && (
                 <form onSubmit={handlePasswordLogin} className="space-y-4">
                   <div>
                     <div className="text-xs font-semibold text-slate-200 mb-1">
-                      Sign In with Password
+                      Account Password Sign In
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                      Enter your account username or email address and password.
+                      Sign in using your account identifier (e.g. username, email, or phone) and password.
                     </p>
                   </div>
 
                   <div>
                     <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Username or Email
+                      Username / Email / Phone
                     </label>
                     <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
                       <User className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
                       <input
                         type="text"
-                        placeholder="e.g. alex or alex@example.com"
+                        placeholder="e.g. admin or support@xperiserv.in"
                         value={loginIdentifier}
                         onChange={(e) => setLoginIdentifier(e.target.value)}
                         className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
@@ -888,157 +1222,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                       )}
                     </button>
                   </div>
-
-                  <div className="pt-2 text-center text-[11px] text-slate-400">
-                    Don't have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => handleModeChange('register')}
-                      className="text-cyan-400 hover:underline font-semibold"
-                    >
-                      Create one
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* ============================================================== */}
-              {/* 3. SIGN UP / CREATE ACCOUNT                                    */}
-              {/* ============================================================== */}
-              {authMode === 'register' && (
-                <form onSubmit={handleRegister} className="space-y-3.5">
-                  <div>
-                    <div className="text-xs font-semibold text-slate-200 mb-1">
-                      Create Your Account
-                    </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Join the communication network with an authenticated profile.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Full Name
-                    </label>
-                    <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
-                      <User className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
-                      <input
-                        type="text"
-                        placeholder="Display Name"
-                        value={regName}
-                        onChange={(e) => setRegName(e.target.value)}
-                        className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Username
-                    </label>
-                    <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
-                      <span className="text-slate-500 text-xs mr-1 font-mono">@</span>
-                      <input
-                        type="text"
-                        placeholder="unique_handle"
-                        value={regUsername}
-                        onChange={(e) => setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                        className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none font-mono"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Email Address <span className="text-slate-500">(Optional)</span>
-                    </label>
-                    <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
-                      <Mail className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
-                      <input
-                        type="email"
-                        placeholder="name@example.com"
-                        value={regEmail}
-                        onChange={(e) => setRegEmail(e.target.value)}
-                        className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Password
-                    </label>
-                    <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
-                      <Lock className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
-                      <input
-                        type={showRegPassword ? 'text' : 'password'}
-                        placeholder="At least 6 characters"
-                        value={regPassword}
-                        onChange={(e) => setRegPassword(e.target.value)}
-                        className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="text-slate-500 hover:text-slate-300 ml-1"
-                      >
-                        {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                      Phone Number <span className="text-slate-500">(Optional)</span>
-                    </label>
-                    <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 focus-within:border-cyan-500 transition">
-                      <Phone className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
-                      <input
-                        type="tel"
-                        placeholder="+1 555-0199"
-                        value={regPhone}
-                        onChange={(e) => setRegPhone(e.target.value)}
-                        className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !regName.trim() || !regUsername.trim() || !regPassword.trim()}
-                      className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
-                    >
-                      {isSubmitting ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <>
-                          <span>Create Account</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="pt-1 text-center text-[11px] text-slate-400">
-                    Already have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => handleModeChange('password')}
-                      className="text-cyan-400 hover:underline font-semibold"
-                    >
-                      Sign in
-                    </button>
-                  </div>
                 </form>
               )}
             </div>
           </>
         )}
       </div>
+
+      {/* Photo Studio / Camera Modal for Onboarding Profile */}
+      {photoUploaderOpen && (
+        <PhotoUploaderModal
+          isOpen={photoUploaderOpen}
+          onClose={() => setPhotoUploaderOpen(false)}
+          currentPhotoUrl={avatarUrl}
+          onPhotoSelected={(url) => {
+            setAvatarUrl(url);
+          }}
+          title="Choose Profile Avatar"
+          aspectRatio="circle"
+        />
+      )}
     </div>
   );
 };

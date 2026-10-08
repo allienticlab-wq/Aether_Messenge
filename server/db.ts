@@ -484,6 +484,7 @@ class Database {
           chatId: newChat.id,
           senderId: partner.id,
           text: partner.defaultMsg,
+          reactions: [],
           deletedForUserIds: [],
           status: 'sent',
           createdAt: now,

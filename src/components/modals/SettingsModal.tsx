@@ -16,9 +16,11 @@ import {
   QrCode,
   Laptop,
   Globe,
-  Award
+  Award,
+  Camera
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
+import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,6 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
   const [about, setAbout] = useState('');
   const [customStatus, setCustomStatus] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
 
   // Privacy State
   const [lastSeen, setLastSeen] = useState<'everyone' | 'contacts' | 'nobody'>('everyone');
@@ -280,12 +283,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
               {/* Profile Card Header with Verified Badge */}
               <div className="p-4 rounded-xl bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="relative shrink-0">
+                  <div className="relative shrink-0 group">
                     <img
                       src={avatarUrl || currentUser.avatarUrl}
                       alt={displayName}
-                      className="w-16 h-16 rounded-full object-cover border-2 border-cyan-500/40 shadow-md"
+                      className="w-16 h-16 rounded-full object-cover border-2 border-cyan-500/40 shadow-md group-hover:opacity-80 transition cursor-pointer"
+                      onClick={() => setPhotoModalOpen(true)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setPhotoModalOpen(true)}
+                      className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white"
+                      title="Change Photo"
+                    >
+                      <Camera className="w-5 h-5 text-cyan-300" />
+                    </button>
                     {currentUser.verificationStatus === 'verified' && (
                       <div className="absolute -bottom-1 -right-1 bg-slate-900 rounded-full p-0.5 border border-slate-700">
                         <VerifiedBadge
@@ -336,17 +348,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                     )}
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPhotoModalOpen(true)}
+                  className="px-3 py-1.5 bg-cyan-950/70 hover:bg-cyan-900/80 text-cyan-300 border border-cyan-800/60 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0"
+                >
+                  <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Change Photo</span>
+                </button>
               </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1">Avatar Image URL</label>
-                <input
-                  type="url"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
-                />
+              {/* Photo Options Bar */}
+              <div className="flex items-center gap-3 p-3 bg-slate-950/40 border border-slate-800/80 rounded-xl">
+                <div className="flex-1">
+                  <span className="text-xs font-medium text-slate-200 block">Profile Picture</span>
+                  <p className="text-[11px] text-slate-400">Upload an image file, snap with your webcam, or choose an avatar preset.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPhotoModalOpen(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg font-medium transition flex items-center gap-1.5 shrink-0"
+                >
+                  <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Open Photo Studio</span>
+                </button>
               </div>
 
               <div>
@@ -847,6 +873,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
           )}
         </div>
       </div>
+
+      {/* Photo Studio & Camera Uploader Modal */}
+      {photoModalOpen && (
+        <PhotoUploaderModal
+          isOpen={photoModalOpen}
+          onClose={() => setPhotoModalOpen(false)}
+          currentPhotoUrl={avatarUrl || currentUser.avatarUrl}
+          onPhotoSelected={async (newUrl) => {
+            setAvatarUrl(newUrl);
+            await updateProfile({ avatarUrl: newUrl });
+            setNotificationMsg({ type: 'success', text: 'Profile photo updated successfully.' });
+          }}
+          title="Profile Photo Studio"
+          aspectRatio="circle"
+        />
+      )}
     </div>
   );
 };

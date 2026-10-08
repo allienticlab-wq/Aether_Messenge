@@ -19,6 +19,8 @@ import {
   Sparkles,
   Sticker
 } from 'lucide-react';
+import { PhotoSendPreviewModal } from './PhotoSendPreviewModal.js';
+import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
 
 interface MessageComposerProps {
   replyMessage: Message | null;
@@ -43,6 +45,15 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Photo System states
+  const [photoPreviewData, setPhotoPreviewData] = useState<{
+    dataUrl: string;
+    name: string;
+    size: number;
+    mimeType: string;
+  } | null>(null);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
 
   // Curated GIFs with reliable high-quality web-safe animated sources
   const sampleGifs = [
@@ -196,9 +207,44 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
         size: file.size,
       };
 
+      if (isImg) {
+        setPhotoPreviewData({
+          dataUrl: dataUri,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || 'image/jpeg',
+        });
+        return;
+      }
+
       await sendMessage('', [att]);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSendPhotoWithCaption = async (caption: string, attachment: Attachment) => {
+    let replySnippet: MessageReplySnippet | undefined;
+    if (replyMessage) {
+      replySnippet = {
+        id: replyMessage.id,
+        senderId: replyMessage.senderId,
+        senderName: replyMessage.sender?.displayName || 'User',
+        text: replyMessage.text,
+      };
+    }
+    await sendMessage(caption, [attachment], replySnippet);
+    onClearReply();
+  };
+
+  const handleCameraPhotoSnapped = (photoUrl: string) => {
+    if (photoUrl) {
+      setPhotoPreviewData({
+        dataUrl: photoUrl,
+        name: `Camera_Photo_${Date.now()}.jpg`,
+        size: Math.round(photoUrl.length * 0.75),
+        mimeType: 'image/jpeg',
+      });
+    }
   };
 
   const sendGif = async (gifUrl: string) => {
@@ -252,7 +298,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
       {/* Floating Attachments Drawer */}
       {attachmentDrawerOpen && (
-        <div className="absolute bottom-16 left-4 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md grid grid-cols-3 gap-2 w-72 text-xs">
+        <div className="absolute bottom-16 left-4 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md grid grid-cols-4 gap-2 w-80 text-xs">
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-cyan-400 transition"
@@ -260,7 +306,20 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
               <Image className="w-4 h-4" />
             </div>
-            <span>Photos & Videos</span>
+            <span>Photos</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setAttachmentDrawerOpen(false);
+              setCameraModalOpen(true);
+            }}
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-amber-400 transition"
+          >
+            <div className="p-2.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/50">
+              <Camera className="w-4 h-4" />
+            </div>
+            <span>Camera</span>
           </button>
 
           <button
@@ -270,7 +329,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-blue-950/60 text-blue-400 border border-blue-800/50">
               <FileText className="w-4 h-4" />
             </div>
-            <span>Document / PDF</span>
+            <span>Document</span>
           </button>
 
           <button
@@ -441,6 +500,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             </button>
 
             <button
+              onClick={() => setCameraModalOpen(true)}
+              className="p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
+              title="Camera (Take Photo)"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+
+            <button
               onClick={() => {
                 setGifPickerOpen(!gifPickerOpen);
                 setEmojiPickerOpen(false);
@@ -501,6 +568,27 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             )}
           </div>
         </div>
+      )}
+
+      {/* Photo Preview & Caption Sender Modal */}
+      {photoPreviewData && (
+        <PhotoSendPreviewModal
+          isOpen={!!photoPreviewData}
+          onClose={() => setPhotoPreviewData(null)}
+          imageFile={photoPreviewData}
+          onSend={handleSendPhotoWithCaption}
+        />
+      )}
+
+      {/* Camera Photo Taker Modal */}
+      {cameraModalOpen && (
+        <PhotoUploaderModal
+          isOpen={cameraModalOpen}
+          onClose={() => setCameraModalOpen(false)}
+          onPhotoSelected={handleCameraPhotoSnapped}
+          title="Take Photo for Chat"
+          aspectRatio="square"
+        />
       )}
     </div>
   );

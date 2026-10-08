@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId);
+      allow update: if isOwner(userId) && isValidId(userId);
+      allow delete: if false;
+    }
+
+    match /chats/{chatId} {
+      allow read, create, update: if isAuthenticated() && isValidId(chatId);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && isValidId(messageId);
+        allow create: if isAuthenticated() && isValidId(messageId) && request.resource.data.senderId == request.auth.uid;
+        allow update: if isAuthenticated() && isValidId(messageId) && resource.data.senderId == request.auth.uid;
+        allow delete: if false;
+      }
+    }
+  }
+}

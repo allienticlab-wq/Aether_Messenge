@@ -25,6 +25,7 @@ import {
   Plus
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
+import { PhotoLightboxModal } from '../common/PhotoLightboxModal.js';
 
 interface MessageItemProps {
   message: Message;
@@ -50,6 +51,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.text || '');
+  const [activeLightboxImage, setActiveLightboxImage] = useState<{ url: string; name: string } | null>(null);
 
   // Audio Playback state for voice messages
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -382,8 +384,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     <img
                       src={att.url}
                       alt={att.name}
-                      className="max-h-60 rounded-xl object-cover w-full cursor-pointer hover:opacity-95"
-                      onClick={() => window.open(att.url, '_blank')}
+                      className="max-h-60 rounded-xl object-cover w-full cursor-pointer hover:opacity-95 transition hover:brightness-105"
+                      onClick={() => setActiveLightboxImage({ url: att.url, name: att.name })}
                     />
                   ) : att.type === 'video' ? (
                     <video src={att.url} controls className="max-h-60 rounded-xl w-full" />
@@ -744,6 +746,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* High-Resolution Photo Lightbox Modal */}
+      {activeLightboxImage && (
+        <PhotoLightboxModal
+          isOpen={!!activeLightboxImage}
+          onClose={() => setActiveLightboxImage(null)}
+          imageUrl={activeLightboxImage.url}
+          imageName={activeLightboxImage.name}
+          senderName={message.sender?.displayName}
+          timestamp={message.createdAt}
+        />
       )}
     </div>
   );

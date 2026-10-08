@@ -1,5 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile, UserSession } from '../types/index.js';
+import {
+  signInWithFirebaseEmail,
+  signUpWithFirebaseEmail,
+  sendFirebasePasswordReset,
+  signInWithFirebaseGoogle,
+  verifyFirebasePhoneOtp,
+  signOutFirebase,
+} from '../lib/firebase.js';
+import type { ConfirmationResult } from 'firebase/auth';
 
 interface AuthContextType {
   currentUser: UserProfile | null;
@@ -9,6 +18,17 @@ interface AuthContextType {
   register: (data: { email?: string; username: string; displayName: string; password: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
   requestPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string; previewCode?: string }>;
   verifyPhoneOtp: (phone: string, code: string, profile?: { displayName?: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string; isNewUser?: boolean }>;
+  // Firebase Auth additions
+  firebasePhoneSignIn: (
+    confirmationResult: ConfirmationResult,
+    code: string,
+    profile?: { displayName?: string; avatarUrl?: string }
+  ) => Promise<{ success: boolean; error?: string; user?: UserProfile }>;
+  firebaseEmailLogin: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  firebaseEmailRegister: (email: string, pass: string, displayName: string, avatarUrl?: string) => Promise<{ success: boolean; error?: string }>;
+  firebaseGoogleLogin: () => Promise<{ success: boolean; error?: string }>;
+  firebaseSendPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
+  firebaseSyncUser: (data: { uid: string; email?: string; phoneNumber?: string; displayName?: string; photoURL?: string; providerId?: string }) => Promise<{ success: boolean; error?: string; user?: UserProfile }>;
   logout: () => void;
   switchDemoUser: (userId: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
@@ -39,11 +59,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'x-session-id': savedSessionId,
       },
     })
-      .then(res => {
+      .then((res) => {
         if (!res.ok) throw new Error('Session invalid');
         return res.json();
       })
-      .then(data => {
+      .then((data) => {
         if (data.user) {
           setCurrentUser(data.user);
           setSession({
@@ -59,7 +79,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             createdAt: data.user.createdAt,
           });
         } else {
-          // Stale credentials in localStorage
           localStorage.removeItem('aether_user_id');
           localStorage.removeItem('aether_session_id');
         }
@@ -70,6 +89,144 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })
       .finally(() => setIsLoading(false));
   }, []);
+
+  // Helper to sync Firebase authenticated user with local backend session & state
+  const firebaseSyncUser = async (data: {
+    uid: string;
+    email?: string;
+    phoneNumber?: string;
+    displayName?: string;
+    photoURL?: string;
+    providerId?: string;
+  }) => {
+    try {
+      const res = await fetch('/api/auth/firebase-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        return { success: false, error: resData.error || 'Failed to sync authentication session.' };
+      }
+      setCurrentUser(resData.user);
+      setSession(resData.session);
+      localStorage.setItem('aether_user_id', resData.user.id);
+      localStorage.setItem('aether_session_id', resData.session.id);
+      return { success: true, user: resData.user };
+    } catch {
+      return { success: false, error: 'Network error synchronizing session.' };
+    }
+  };
+
+  // Firebase Phone OTP verification and account synchronization
+  const firebasePhoneSignIn = async (
+    confirmationResult: ConfirmationResult,
+    code: string,
+    profile?: { displayName?: string; avatarUrl?: string }
+  ) => {
+    try {
+      const cred = await verifyFirebasePhoneOtp(confirmationResult, code);
+      const user = cred.user;
+      return await firebaseSyncUser({
+        uid: user.uid,
+        phoneNumber: user.phoneNumber || undefined,
+        displayName: profile?.displayName || user.displayName || undefined,
+        photoURL: profile?.avatarUrl || user.photoURL || undefined,
+        providerId: 'phone',
+      });
+    } catch (err: any) {
+      console.error('Firebase Phone OTP Error:', err);
+      let errorMsg = 'Failed to verify OTP code.';
+      if (err.code === 'auth/invalid-verification-code') {
+        errorMsg = 'Invalid verification code. Please check and try again.';
+      } else if (err.code === 'auth/code-expired') {
+        errorMsg = 'The verification code has expired. Please request a new one.';
+      }
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Firebase Email Sign In
+  const firebaseEmailLogin = async (email: string, pass: string) => {
+    try {
+      const cred = await signInWithFirebaseEmail(email, pass);
+      const user = cred.user;
+      return await firebaseSyncUser({
+        uid: user.uid,
+        email: user.email || email,
+        displayName: user.displayName || undefined,
+        photoURL: user.photoURL || undefined,
+        providerId: 'password',
+      });
+    } catch (err: any) {
+      console.error('Firebase Email Login Error:', err);
+      let errorMsg = 'Failed to sign in with email.';
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errorMsg = 'Invalid email or password.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMsg = 'Invalid email address format.';
+      }
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Firebase Email Sign Up
+  const firebaseEmailRegister = async (
+    email: string,
+    pass: string,
+    displayName: string,
+    avatarUrl?: string
+  ) => {
+    try {
+      const cred = await signUpWithFirebaseEmail(email, pass, displayName);
+      const user = cred.user;
+      return await firebaseSyncUser({
+        uid: user.uid,
+        email: user.email || email,
+        displayName,
+        photoURL: avatarUrl,
+        providerId: 'password',
+      });
+    } catch (err: any) {
+      console.error('Firebase Email Register Error:', err);
+      let errorMsg = 'Failed to create account.';
+      if (err.code === 'auth/email-already-in-use') {
+        errorMsg = 'This email address is already in use.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'Password should be at least 6 characters.';
+      }
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Firebase Google Sign In
+  const firebaseGoogleLogin = async () => {
+    try {
+      const cred = await signInWithFirebaseGoogle();
+      const user = cred.user;
+      return await firebaseSyncUser({
+        uid: user.uid,
+        email: user.email || undefined,
+        displayName: user.displayName || undefined,
+        photoURL: user.photoURL || undefined,
+        providerId: 'google',
+      });
+    } catch (err: any) {
+      console.error('Firebase Google Sign In Error:', err);
+      return { success: false, error: err.message || 'Google sign-in was cancelled or failed.' };
+    }
+  };
+
+  // Firebase Password Reset
+  const firebaseSendPasswordReset = async (email: string) => {
+    try {
+      await sendFirebasePasswordReset(email);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send password reset email.' };
+    }
+  };
 
   const login = async (identifier: string, password: string, mfaCode?: string) => {
     try {
@@ -164,6 +321,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    try {
+      signOutFirebase();
+    } catch {
+      // ignore
+    }
     setCurrentUser(null);
     setSession(null);
     localStorage.removeItem('aether_user_id');
@@ -265,6 +427,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         requestPhoneOtp,
         verifyPhoneOtp,
+        firebasePhoneSignIn,
+        firebaseEmailLogin,
+        firebaseEmailRegister,
+        firebaseGoogleLogin,
+        firebaseSendPasswordReset,
+        firebaseSyncUser,
         logout,
         switchDemoUser,
         updateProfile,
