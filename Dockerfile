@@ -5,9 +5,10 @@ WORKDIR /app
 
 # Copy dependency manifests
 COPY package*.json ./
+COPY .npmrc* ./
 
 # Install all dependencies for build
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source files
 COPY . .
@@ -25,9 +26,10 @@ ENV PORT=3000
 
 # Copy manifests
 COPY package*.json ./
+COPY .npmrc* ./
 
 # Install production dependencies
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 # Copy compiled frontend assets from builder
 COPY --from=builder /app/dist ./dist

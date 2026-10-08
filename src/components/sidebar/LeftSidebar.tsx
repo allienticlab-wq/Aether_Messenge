@@ -86,12 +86,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     return true;
   });
 
-  const isAdminRole =
+  const isAdminRole = Boolean(
     currentUser &&
-    (currentUser.role === 'super_admin' ||
-      currentUser.role === 'admin' ||
-      currentUser.role === 'moderator' ||
-      currentUser.role === 'support');
+      (currentUser.role === 'super_admin' || currentUser.role === 'admin')
+  );
 
   return (
     <div className="w-full md:w-80 lg:w-96 flex flex-col h-full border-r border-slate-800/80 bg-slate-950/60 backdrop-blur-xl shrink-0 select-none">
@@ -347,9 +345,9 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         ) : (
           <button
             onClick={onOpenAuth}
-            className="flex-1 py-1.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-semibold text-xs transition mr-2"
+            className="flex-1 py-1.5 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition mr-2"
           >
-            Sign In / Switch Profile
+            Sign In to Account
           </button>
         )}
 
@@ -359,7 +357,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <button
               onClick={onOpenAdmin}
               className="p-2 text-cyan-400 hover:text-cyan-300 rounded-xl hover:bg-slate-900 transition"
-              title="Admin Console & Moderation"
+              title="Admin Console & Operations"
             >
               <Shield className="w-4 h-4" />
             </button>
@@ -384,7 +382,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           <button
             onClick={onOpenAuth}
             className="p-2 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-900 transition"
-            title="Switch Demo User"
+            title={currentUser ? "Account Profile / Sign Out" : "Sign In"}
           >
             <Sparkles className="w-4 h-4" />
           </button>

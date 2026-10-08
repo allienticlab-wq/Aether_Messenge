@@ -87,12 +87,24 @@ function MessengerApp() {
     ? messages.filter((m) => m.text?.toLowerCase().includes(inChatQuery.toLowerCase()))
     : messages;
 
-  const isAdminRole =
+  const isAdminRole = Boolean(
     currentUser &&
-    (currentUser.role === 'super_admin' ||
-      currentUser.role === 'admin' ||
-      currentUser.role === 'moderator' ||
-      currentUser.role === 'support');
+      (currentUser.role === 'super_admin' || currentUser.role === 'admin')
+  );
+
+  // If user is not logged in as admin, force viewMode to messenger
+  useEffect(() => {
+    if (!isAdminRole && (viewMode === 'admin' || viewMode === 'split')) {
+      setViewMode('messenger');
+    }
+  }, [isAdminRole, viewMode]);
+
+  // Prompt login if user is not authenticated on load
+  useEffect(() => {
+    if (!isLoading && !currentUser) {
+      setAuthModalOpen(true);
+    }
+  }, [isLoading, currentUser]);
 
   return (
     <div
@@ -114,62 +126,68 @@ function MessengerApp() {
             <span className="font-bold text-xs tracking-tight text-slate-100 hidden sm:inline">{branding.appName}</span>
           </div>
 
-          {/* Core View Switcher Controls */}
-          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 p-0.5 rounded-xl text-xs">
-            <button
-              onClick={() => setViewMode('messenger')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
-                viewMode === 'messenger'
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Messenger</span>
-            </button>
+          {/* Core View Switcher Controls - ONLY visible to authenticated Admins */}
+          {isAdminRole && (
+            <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 p-0.5 rounded-xl text-xs">
+              <button
+                onClick={() => setViewMode('messenger')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
+                  viewMode === 'messenger'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Messenger</span>
+              </button>
 
-            <button
-              onClick={() => setViewMode('admin')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
-                viewMode === 'admin'
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Server className="w-3.5 h-3.5" />
-              <span>Admin Console</span>
-              {isAdminRole && (
+              <button
+                onClick={() => setViewMode('admin')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
+                  viewMode === 'admin'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>Admin Console</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
-              )}
-            </button>
+              </button>
 
-            <button
-              onClick={() => setViewMode('split')}
-              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
-                viewMode === 'split'
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="View Messenger and Admin Console Side-by-Side"
-            >
-              <Columns className="w-3.5 h-3.5" />
-              <span>Split View</span>
-            </button>
-          </div>
+              <button
+                onClick={() => setViewMode('split')}
+                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition ${
+                  viewMode === 'split'
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="View Messenger and Admin Console Side-by-Side"
+              >
+                <Columns className="w-3.5 h-3.5" />
+                <span>Split View</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right Status Badges & Account Profile */}
         <div className="flex items-center gap-2 text-xs">
-          {/* Account Profile Button */}
+          {/* Account Profile / Sign In Button */}
           <button
             onClick={() => setAuthModalOpen(true)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-300 transition"
-            title="Account Profile & Sign In"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition ${
+              currentUser
+                ? 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 text-slate-300'
+                : 'bg-cyan-500 hover:bg-cyan-400 border-cyan-400 text-slate-950 font-bold shadow-sm'
+            }`}
+            title={currentUser ? 'Account Profile & Settings' : 'Sign In to Your Account'}
           >
             {currentUser?.avatarUrl ? (
               <img src={currentUser.avatarUrl} alt="" className="w-4 h-4 rounded-full object-cover" />
-            ) : (
+            ) : currentUser ? (
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            ) : (
+              <Lock className="w-3.5 h-3.5" />
             )}
             <span className="text-[11px] font-medium hidden sm:inline">
               {currentUser?.displayName ? currentUser.displayName.split(' ')[0] : 'Sign In'}
@@ -177,7 +195,7 @@ function MessengerApp() {
             {currentUser?.verificationStatus === 'verified' && (
               <VerifiedBadge status="verified" category={currentUser?.verificationCategory} size="sm" />
             )}
-            <ChevronDown className="w-3 h-3 text-slate-400" />
+            {currentUser && <ChevronDown className="w-3 h-3 text-slate-400" />}
           </button>
 
           {/* Theme Quick Switcher */}
@@ -356,8 +374,8 @@ function MessengerApp() {
           </div>
         )}
 
-        {/* VIEW 2: FULL ADMIN CONSOLE (or right side of SPLIT VIEW) */}
-        {(viewMode === 'admin' || viewMode === 'split') && (
+        {/* VIEW 2: FULL ADMIN CONSOLE (or right side of SPLIT VIEW) - Strictly guarded */}
+        {isAdminRole && (viewMode === 'admin' || viewMode === 'split') && (
           <div className={`h-full ${viewMode === 'split' ? 'w-full lg:w-1/2' : 'w-full'}`}>
             <AdminDashboard isEmbedded={true} />
           </div>

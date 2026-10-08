@@ -21,10 +21,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<UserSession | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Initialize with admin or stored user
+  // Initialize only if user has previously logged in
   useEffect(() => {
-    const savedUserId = localStorage.getItem('aether_user_id') || 'usr_admin';
-    const savedSessionId = localStorage.getItem('aether_session_id') || 'sess_default';
+    const savedUserId = localStorage.getItem('aether_user_id');
+    const savedSessionId = localStorage.getItem('aether_session_id');
+
+    if (!savedUserId || !savedSessionId) {
+      setIsLoading(false);
+      return;
+    }
 
     fetch('/api/auth/me', {
       headers: {
@@ -32,7 +37,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         'x-session-id': savedSessionId,
       },
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Session invalid');
+        return res.json();
+      })
       .then(data => {
         if (data.user) {
           setCurrentUser(data.user);
@@ -48,9 +56,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             lastActive: new Date().toISOString(),
             createdAt: data.user.createdAt,
           });
+        } else {
+          // Stale credentials in localStorage
+          localStorage.removeItem('aether_user_id');
+          localStorage.removeItem('aether_session_id');
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        localStorage.removeItem('aether_user_id');
+        localStorage.removeItem('aether_session_id');
+      })
       .finally(() => setIsLoading(false));
   }, []);
 

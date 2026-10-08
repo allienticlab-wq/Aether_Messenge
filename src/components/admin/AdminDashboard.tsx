@@ -11,6 +11,7 @@ import {
 } from '../../types/index.js';
 import {
   X,
+  Shield,
   LayoutDashboard,
   Users,
   Award,
@@ -483,6 +484,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'backup', label: 'Backup & Restore', icon: Database },
     { id: 'easypanel', label: 'Easypanel Deploy', icon: Server },
   ];
+
+  const isAdmin = currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'admin');
+
+  if (!isAdmin) {
+    return (
+      <div className={containerClasses}>
+        <div className={`${innerClasses} flex flex-col items-center justify-center p-8 text-center space-y-4`}>
+          <div className="p-4 rounded-2xl bg-rose-950/40 border border-rose-800/60 text-rose-400">
+            <Shield className="w-8 h-8" />
+          </div>
+          <h3 className="font-bold text-base text-slate-100">Restricted Access: Administrator Only</h3>
+          <p className="text-xs text-slate-400 max-w-sm">
+            The Operations Console requires an authenticated Administrator or Super Administrator session. Please sign in with an admin account to access.
+          </p>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={containerClasses}>
