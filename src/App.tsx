@@ -227,10 +227,28 @@ function MessengerApp() {
             {/* Left Sidebar */}
             <div className={`w-full md:w-auto h-full ${activeChat ? 'hidden md:flex' : 'flex'}`}>
               <LeftSidebar
-                onOpenNewChat={() => setNewChatModalOpen(true)}
-                onOpenNewCommunity={() => setNewCommunityModalOpen(true)}
+                onOpenNewChat={() => {
+                  if (!currentUser) {
+                    setAuthModalOpen(true);
+                  } else {
+                    setNewChatModalOpen(true);
+                  }
+                }}
+                onOpenNewCommunity={() => {
+                  if (!currentUser) {
+                    setAuthModalOpen(true);
+                  } else {
+                    setNewCommunityModalOpen(true);
+                  }
+                }}
                 onOpenSettings={() => setSettingsModalOpen(true)}
-                onOpenVerification={() => setVerificationModalOpen(true)}
+                onOpenVerification={() => {
+                  if (!currentUser) {
+                    setAuthModalOpen(true);
+                  } else {
+                    setVerificationModalOpen(true);
+                  }
+                }}
                 onOpenAdmin={() => setViewMode('admin')}
                 onOpenAuth={() => setAuthModalOpen(true)}
                 onOpenLegal={() => setLegalModalOpen(true)}
@@ -327,20 +345,32 @@ function MessengerApp() {
 
                   <div className="grid grid-cols-2 gap-3 max-w-sm w-full text-xs">
                     <button
-                      onClick={() => setNewChatModalOpen(true)}
+                      onClick={() => {
+                        if (!currentUser) {
+                          setAuthModalOpen(true);
+                        } else {
+                          setNewChatModalOpen(true);
+                        }
+                      }}
                       className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-850 text-slate-200 transition text-left space-y-1"
                     >
                       <MessageSquare className="w-4 h-4 text-cyan-400" />
-                      <div className="font-semibold text-slate-100">Start a Chat</div>
-                      <div className="text-[10px] text-slate-400">Direct 1-to-1 conversation</div>
+                      <div className="font-semibold text-slate-100">{currentUser ? 'Start a Chat' : 'Sign In to Chat'}</div>
+                      <div className="text-[10px] text-slate-400">{currentUser ? 'Direct 1-to-1 conversation' : 'Access your conversations'}</div>
                     </button>
 
                     <button
-                      onClick={() => setNewCommunityModalOpen(true)}
+                      onClick={() => {
+                        if (!currentUser) {
+                          setAuthModalOpen(true);
+                        } else {
+                          setNewCommunityModalOpen(true);
+                        }
+                      }}
                       className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 hover:bg-slate-850 text-slate-200 transition text-left space-y-1"
                     >
                       <Award className="w-4 h-4 text-blue-400" />
-                      <div className="font-semibold text-slate-100">Communities</div>
+                      <div className="font-semibold text-slate-100">{currentUser ? 'Communities' : 'Communities Hub'}</div>
                       <div className="text-[10px] text-slate-400">Hubs & Broadcast channels</div>
                     </button>
                   </div>
@@ -392,7 +422,13 @@ function MessengerApp() {
             if (tab === 'settings') setSettingsModalOpen(true);
             if (tab === 'communities') setNewCommunityModalOpen(true);
           }}
-          onOpenNewChat={() => setNewChatModalOpen(true)}
+          onOpenNewChat={() => {
+            if (!currentUser) {
+              setAuthModalOpen(true);
+            } else {
+              setNewChatModalOpen(true);
+            }
+          }}
           unreadCount={totalUnread}
         />
       )}
@@ -402,8 +438,16 @@ function MessengerApp() {
 
       {/* ALL MODALS */}
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
-      <NewChatModal isOpen={newChatModalOpen} onClose={() => setNewChatModalOpen(false)} />
-      <NewCommunityModal isOpen={newCommunityModalOpen} onClose={() => setNewCommunityModalOpen(false)} />
+      <NewChatModal
+        isOpen={newChatModalOpen}
+        onClose={() => setNewChatModalOpen(false)}
+        onRequireAuth={() => setAuthModalOpen(true)}
+      />
+      <NewCommunityModal
+        isOpen={newCommunityModalOpen}
+        onClose={() => setNewCommunityModalOpen(false)}
+        onRequireAuth={() => setAuthModalOpen(true)}
+      />
       <VerificationModal isOpen={verificationModalOpen} onClose={() => setVerificationModalOpen(false)} />
       <SettingsModal
         isOpen={settingsModalOpen}

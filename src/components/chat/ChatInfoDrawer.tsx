@@ -59,13 +59,14 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
 
   // Update disappearing messages
   const handleUpdateDisappearing = async (duration: DisappearingDuration) => {
+    if (!currentUser) return;
     setSelectedDuration(duration);
     try {
       await fetch(`/api/chats/${activeChat.id}/disappearing`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': currentUser?.id || 'usr_admin',
+          'x-user-id': currentUser.id,
         },
         body: JSON.stringify({ duration }),
       });

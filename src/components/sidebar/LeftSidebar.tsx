@@ -112,9 +112,15 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           <PWAInstallButton />
 
           <button
-            onClick={onOpenNewChat}
+            onClick={() => {
+              if (!currentUser) {
+                onOpenAuth();
+              } else {
+                onOpenNewChat();
+              }
+            }}
             className="p-2 text-slate-300 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
-            title="Start New Chat or Group"
+            title={currentUser ? "Start New Chat or Group" : "Sign in to start a chat"}
           >
             <Plus className="w-4 h-4" />
           </button>

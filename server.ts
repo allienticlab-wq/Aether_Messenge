@@ -49,6 +49,25 @@ async function bootstrap() {
     console.log(`[Aether Platform] Unified server running on http://0.0.0.0:${PORT}`);
     console.log(`[Aether Platform] WebSockets active on ws://0.0.0.0:${PORT}/ws`);
   });
+
+  // Dual-port listening resilience for Easypanel / Docker reverse proxies:
+  // If Easypanel expects port 80 and PORT is 3000 (or vice versa), bind secondary port so routing NEVER fails
+  const secondaryPort = PORT === 80 ? 3000 : 80;
+  if (!process.env.DISABLE_SECONDARY_PORT) {
+    try {
+      const secondaryServer = http.createServer(app);
+      wsManager.initialize(secondaryServer);
+      secondaryServer.on('error', (err: any) => {
+        // Silently ignore if port 80 requires unprivileged permissions or is already bound
+        console.log(`[Aether Platform] Secondary port ${secondaryPort} listener skipped (${err.code || err.message}), primary port ${PORT} active.`);
+      });
+      secondaryServer.listen(secondaryPort, '0.0.0.0', () => {
+        console.log(`[Aether Platform] Secondary listener active on http://0.0.0.0:${secondaryPort}`);
+      });
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 bootstrap().catch((err) => {

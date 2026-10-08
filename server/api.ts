@@ -105,6 +105,94 @@ apiRouter.post('/auth/register', (req: Request, res: Response) => {
   });
 });
 
+// Phone Authentication: Request OTP (WhatsApp-style onboarding)
+apiRouter.post('/auth/phone/request-otp', async (req: Request, res: Response) => {
+  const { phone } = req.body;
+  if (!phone || typeof phone !== 'string' || phone.trim().length < 6) {
+    return res.status(400).json({ error: 'Valid phone number is required.' });
+  }
+
+  const cleanPhone = phone.trim();
+  const otp = db.createOtp(cleanPhone, 'phone_verify');
+
+  // Trigger SMS service
+  const smsResult = await smsService.sendOtp(cleanPhone, otp.code, db.state.branding.appShortName);
+  db.state.outboxSms.unshift({
+    id: smsResult.messageId,
+    to: cleanPhone,
+    body: `Your ${db.state.branding.appShortName} verification code is: ${otp.code}`,
+    status: 'delivered',
+    sentAt: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    message: `Verification code sent to ${cleanPhone}.`,
+    previewCode: otp.code,
+  });
+});
+
+// Phone Authentication: Verify OTP & Profile Setup
+apiRouter.post('/auth/phone/verify-otp', (req: Request, res: Response) => {
+  const { phone, code, displayName, avatarUrl } = req.body;
+  if (!phone || !code) {
+    return res.status(400).json({ error: 'Phone number and verification code are required.' });
+  }
+
+  const cleanPhone = phone.trim();
+  const result = db.verifyOtp(cleanPhone, code.trim(), 'phone_verify');
+  if (!result.success) {
+    return res.status(400).json({ error: result.error || 'Invalid or expired verification code.' });
+  }
+
+  let user = db.getUserByPhone(cleanPhone);
+  let isNewUser = false;
+
+  if (user) {
+    if (user.isBanned) {
+      return res.status(403).json({ error: `Account suspended: ${user.banReason || 'Policy breach'}` });
+    }
+    user.isOnline = true;
+    user.phoneVerified = true;
+    user.lastSeen = new Date().toISOString();
+    if (displayName && displayName.trim()) {
+      user.displayName = displayName.trim();
+    }
+    if (avatarUrl) {
+      user.avatarUrl = avatarUrl;
+    }
+  } else {
+    isNewUser = true;
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const randSuffix = Math.floor(1000 + Math.random() * 9000);
+    const candidateUsername = `user_${digitsOnly.slice(-4) || randSuffix}`;
+
+    user = db.createUser({
+      username: candidateUsername,
+      displayName: (displayName && displayName.trim()) || `User ${cleanPhone.slice(-4)}`,
+      phone: cleanPhone,
+      password: `phone_auth_${Date.now()}`,
+    });
+    user.phoneVerified = true;
+    if (avatarUrl) {
+      user.avatarUrl = avatarUrl;
+    }
+  }
+
+  const session = db.createSession(user.id, req.headers['user-agent'], req.ip);
+
+  db.addAuditLog(user.id, user.displayName, isNewUser ? 'USER_REGISTER_PHONE' : 'USER_LOGIN_PHONE', 'user', user.id, {
+    phone: cleanPhone,
+  });
+
+  res.json({
+    success: true,
+    user: db.toPublicProfile(user),
+    session,
+    isNewUser,
+  });
+});
+
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
   const { loginIdentifier, password, mfaCode } = req.body;
   if (!loginIdentifier || !password) {
@@ -269,6 +357,25 @@ apiRouter.post('/auth/account/delete', requireAuth, (req: Request, res: Response
 
   db.addAuditLog(user.id, user.displayName, 'ACCOUNT_DELETED', 'user', user.id, {});
   res.json({ success: true, message: 'Account permanently erased.' });
+});
+
+// User Directory & Search for discovering contacts (accessible by authenticated users or guests)
+apiRouter.get('/users', (req: Request, res: Response) => {
+  const q = ((req.query.q as string) || '').trim().toLowerCase();
+
+  const users = Array.from(db.state.users.values())
+    .filter((u) => !u.isBanned)
+    .filter((u) => {
+      if (!q) return true;
+      const matchName = u.displayName.toLowerCase().includes(q);
+      const matchUser = u.username.toLowerCase().includes(q);
+      const matchEmail = u.email && u.email.toLowerCase().includes(q);
+      const matchPhone = u.phone && u.phone.includes(q);
+      return matchName || matchUser || matchEmail || matchPhone;
+    })
+    .map((u) => db.toPublicProfile(u));
+
+  res.json({ users });
 });
 
 // ==============================================================================

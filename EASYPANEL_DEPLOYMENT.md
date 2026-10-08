@@ -102,6 +102,31 @@ services:
 
 ---
 
+## Troubleshooting: "Service is not reachable" in Easypanel
+
+If Easypanel displays a dark screen with the Easypanel hexagon logo saying **"Service is not reachable. Make sure the service is running and healthy"**:
+
+1. **Check the Port setting in Easypanel**:
+   - In your Easypanel App service, go to **General** or **Ports** / **Domains**.
+   - Make sure the App Port is set to **`3000`** (or **`80`**).
+   - *Note:* We have built in a dual-port listener in `server.ts` that listens on **both** port 3000 and port 80 simultaneously, so routing works seamlessly regardless of which port Easypanel chooses!
+
+2. **Verify Environment Variables**:
+   - In Easypanel &rarr; **Environment**:
+     - `NODE_ENV=production`
+     - `PORT=3000`
+
+3. **Check the Build / Service Logs**:
+   - Go to the **Logs** tab in Easypanel. You should see:
+     ```
+     [Aether Platform] Unified server running on http://0.0.0.0:3000
+     [Aether Platform] WebSockets active on ws://0.0.0.0:3000/ws
+     [Aether Platform] Dual-port adapter active: also listening on http://0.0.0.0:80
+     ```
+   - If you see those lines, the server is healthy. Click **Restart** or trigger a fresh **Deploy** in Easypanel to refresh Traefik's reverse-proxy routes.
+
+---
+
 ## Post-Deployment: Initial Super Admin Login
 
 Once the build finishes and is green:

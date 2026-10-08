@@ -1,28 +1,41 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../context/AuthContext.js';
 import { useChat } from '../../context/ChatContext.js';
 import { X, Globe2, Sparkles, Image } from 'lucide-react';
 
 interface NewCommunityModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onRequireAuth?: () => void;
 }
 
-export const NewCommunityModal: React.FC<NewCommunityModalProps> = ({ isOpen, onClose }) => {
+export const NewCommunityModal: React.FC<NewCommunityModalProps> = ({ isOpen, onClose, onRequireAuth }) => {
+  const { currentUser } = useAuth();
   const { createCommunity } = useChat();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      onClose();
+      onRequireAuth?.();
+      return;
+    }
     if (!name.trim()) return;
     setIsSubmitting(true);
+    setError(null);
     try {
       await createCommunity(name, description);
       onClose();
+    } catch (err: any) {
+      console.warn('Failed to create community:', err);
+      setError(err?.message || 'Could not establish community');
     } finally {
       setIsSubmitting(false);
     }
@@ -46,6 +59,30 @@ export const NewCommunityModal: React.FC<NewCommunityModalProps> = ({ isOpen, on
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+          {!currentUser && (
+            <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-xl flex items-center justify-between gap-3 text-xs">
+              <span className="text-cyan-200">
+                Sign in is required to establish communities.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onRequireAuth?.();
+                }}
+                className="px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold rounded-lg shrink-0 transition"
+              >
+                Sign In
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs">
+              {error}
+            </div>
+          )}
+
           <div className="p-3 bg-cyan-950/20 border border-cyan-800/30 rounded-xl text-slate-300 leading-relaxed">
             Communities unify related group chats under one umbrella with a dedicated <strong>Announcements Channel</strong> managed exclusively by community leaders.
           </div>

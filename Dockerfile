@@ -40,10 +40,10 @@ COPY --from=builder /app/src/types ./src/types
 COPY --from=builder /app/server.ts ./server.ts
 COPY --from=builder /app/public ./public
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/branding || exit 1
+# Resilient Healthcheck (checks both 3000 and 80)
+HEALTHCHECK --interval=20s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/branding || wget --no-verbose --tries=1 --spider http://127.0.0.1:80/api/branding || exit 1
 
-EXPOSE 3000
+EXPOSE 3000 80
 
 CMD ["npm", "start"]

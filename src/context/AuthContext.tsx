@@ -7,6 +7,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (identifier: string, password: string, mfaCode?: string) => Promise<{ success: boolean; requireMfa?: boolean; error?: string }>;
   register: (data: { email?: string; username: string; displayName: string; password: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
+  requestPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string; previewCode?: string }>;
+  verifyPhoneOtp: (phone: string, code: string, profile?: { displayName?: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string; isNewUser?: boolean }>;
   logout: () => void;
   switchDemoUser: (userId: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
@@ -114,6 +116,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const requestPhoneOtp = async (phone: string) => {
+    try {
+      const res = await fetch('/api/auth/phone/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Failed to send OTP.' };
+      }
+      return { success: true, previewCode: data.previewCode };
+    } catch {
+      return { success: false, error: 'Failed to request OTP. Check network connection.' };
+    }
+  };
+
+  const verifyPhoneOtp = async (
+    phone: string,
+    code: string,
+    profile?: { displayName?: string; avatarUrl?: string }
+  ) => {
+    try {
+      const res = await fetch('/api/auth/phone/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone,
+          code,
+          displayName: profile?.displayName,
+          avatarUrl: profile?.avatarUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Invalid verification code.' };
+      }
+      setCurrentUser(data.user);
+      setSession(data.session);
+      localStorage.setItem('aether_user_id', data.user.id);
+      localStorage.setItem('aether_session_id', data.session.id);
+      return { success: true, isNewUser: data.isNewUser };
+    } catch {
+      return { success: false, error: 'Verification failed. Please try again.' };
+    }
+  };
+
   const logout = () => {
     setCurrentUser(null);
     setSession(null);
@@ -214,6 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        requestPhoneOtp,
+        verifyPhoneOtp,
         logout,
         switchDemoUser,
         updateProfile,

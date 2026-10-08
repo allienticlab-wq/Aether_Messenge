@@ -8,9 +8,10 @@ import { VerifiedBadge } from '../common/VerifiedBadge.js';
 interface NewChatModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onRequireAuth?: () => void;
 }
 
-export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) => {
+export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onRequireAuth }) => {
   const { currentUser } = useAuth();
   const { createDirectChat, createGroupChat } = useChat();
 
@@ -21,12 +22,16 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) =
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/admin/users', {
-        headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
-      })
+      setError(null);
+      const headers: Record<string, string> = {};
+      if (currentUser?.id) {
+        headers['x-user-id'] = currentUser.id;
+      }
+      fetch('/api/users', { headers })
         .then((res) => res.json())
         .then((data) => {
           if (data.users) {
@@ -50,10 +55,19 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) =
   });
 
   const handleStartDirect = async (targetUserId: string) => {
+    if (!currentUser) {
+      onClose();
+      onRequireAuth?.();
+      return;
+    }
     setIsSubmitting(true);
+    setError(null);
     try {
       await createDirectChat(targetUserId);
       onClose();
+    } catch (err: any) {
+      console.warn('Failed to start direct conversation:', err);
+      setError(err?.message || 'Could not start conversation');
     } finally {
       setIsSubmitting(false);
     }
@@ -61,11 +75,20 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) =
 
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentUser) {
+      onClose();
+      onRequireAuth?.();
+      return;
+    }
     if (!groupName.trim() || selectedUserIds.length === 0) return;
     setIsSubmitting(true);
+    setError(null);
     try {
       await createGroupChat(groupName, groupDescription, selectedUserIds);
       onClose();
+    } catch (err: any) {
+      console.warn('Failed to create group:', err);
+      setError(err?.message || 'Could not create group chat');
     } finally {
       setIsSubmitting(false);
     }
@@ -94,6 +117,32 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose }) =
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Guest Warning Banner */}
+        {!currentUser && (
+          <div className="mx-6 mt-3 p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-xl flex items-center justify-between gap-3 text-xs">
+            <span className="text-cyan-200">
+              Sign in is required to message contacts.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onRequireAuth?.();
+              }}
+              className="px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold rounded-lg shrink-0 transition"
+            >
+              Sign In
+            </button>
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="mx-6 mt-3 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-xs">
+            {error}
+          </div>
+        )}
 
         {/* Mode Toggle */}
         <div className="flex items-center gap-2 px-6 pt-4 pb-2">
