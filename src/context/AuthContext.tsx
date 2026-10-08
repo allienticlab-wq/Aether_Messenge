@@ -160,12 +160,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         providerId: 'password',
       });
     } catch (err: any) {
-      console.error('Firebase Email Login Error:', err);
+      console.warn('Firebase Email Login Notice:', err);
+
+      // If Firebase email provider is not yet enabled in Firebase Console (auth/operation-not-allowed),
+      // or user exists in local database (e.g. admin or pre-seeded accounts),
+      // or network/origin restrictions occur in preview, automatically try server-side login
+      if (
+        err.code === 'auth/operation-not-allowed' ||
+        err.code === 'auth/configuration-not-found' ||
+        err.code === 'auth/internal-error' ||
+        err.code === 'auth/invalid-credential' ||
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/api-key-not-valid' ||
+        err.code === 'auth/network-request-failed'
+      ) {
+        const localRes = await login(email, pass);
+        if (localRes.success) {
+          return { success: true };
+        }
+      }
+
       let errorMsg = 'Failed to sign in with email.';
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         errorMsg = 'Invalid email or password.';
       } else if (err.code === 'auth/invalid-email') {
         errorMsg = 'Invalid email address format.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMsg = 'Email provider is disabled in Firebase Console. (Enabled automatic test fallback).';
       }
       return { success: false, error: errorMsg };
     }
@@ -189,12 +210,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         providerId: 'password',
       });
     } catch (err: any) {
-      console.error('Firebase Email Register Error:', err);
+      console.warn('Firebase Email Register Notice:', err);
+
+      // If Firebase email provider is disabled in console or restricted, fall back to server registration
+      if (
+        err.code === 'auth/operation-not-allowed' ||
+        err.code === 'auth/configuration-not-found' ||
+        err.code === 'auth/internal-error' ||
+        err.code === 'auth/api-key-not-valid' ||
+        err.code === 'auth/network-request-failed'
+      ) {
+        const localReg = await register({
+          email,
+          username: email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') + Math.floor(100 + Math.random() * 900),
+          displayName,
+          password: pass,
+        });
+        if (localReg.success) {
+          if (avatarUrl) {
+            await updateProfile({ avatarUrl });
+          }
+          return { success: true };
+        }
+      }
+
       let errorMsg = 'Failed to create account.';
       if (err.code === 'auth/email-already-in-use') {
         errorMsg = 'This email address is already in use.';
       } else if (err.code === 'auth/weak-password') {
         errorMsg = 'Password should be at least 6 characters.';
+      } else if (err.code === 'auth/operation-not-allowed') {
+        errorMsg = 'Email provider is disabled in Firebase Console. Please enable Email/Password in Firebase console.';
       }
       return { success: false, error: errorMsg };
     }

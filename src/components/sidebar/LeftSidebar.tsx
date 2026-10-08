@@ -17,10 +17,12 @@ import {
   LogOut,
   Sparkles,
   PhoneCall,
-  X
+  X,
+  Camera
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PWAInstallButton } from '../common/PWAInstallButton.js';
+import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
 
 interface LeftSidebarProps {
   onOpenNewChat: () => void;
@@ -42,13 +44,14 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenLegal,
 }) => {
   const { chats, activeChat, setActiveChat, communities } = useChat();
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, updateProfile } = useAuth();
   const { branding } = useBranding();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'direct' | 'group' | 'communities' | 'starred'>('all');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isSearchingServer, setIsSearchingServer] = useState(false);
+  const [photoUploaderOpen, setPhotoUploaderOpen] = useState(false);
 
   // Server-side Full-Text Search
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -331,16 +334,34 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
       {/* User Footer Profile & Quick Access Actions */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/80 shrink-0 flex items-center justify-between">
         {currentUser ? (
-          <div
-            onClick={onOpenSettings}
-            className="flex items-center gap-2.5 cursor-pointer p-1.5 rounded-xl hover:bg-slate-900 transition min-w-0 flex-1 mr-2"
-          >
-            <img
-              src={currentUser.avatarUrl}
-              alt={currentUser.displayName}
-              className="w-8 h-8 rounded-full object-cover border border-slate-700 shrink-0"
-            />
-            <div className="min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+            {/* Clickable Avatar with Camera Overlay */}
+            <div className="relative group shrink-0">
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.displayName}
+                className="w-8 h-8 rounded-full object-cover border border-slate-700 cursor-pointer group-hover:opacity-75 transition"
+                onClick={() => setPhotoUploaderOpen(true)}
+                title="Change Profile Photo"
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPhotoUploaderOpen(true);
+                }}
+                className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-cyan-300"
+                title="Change Photo"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div
+              onClick={onOpenSettings}
+              className="min-w-0 cursor-pointer flex-1 hover:opacity-90 transition"
+              title="Open Settings"
+            >
               <div className="flex items-center gap-1 font-semibold text-xs text-slate-100 truncate">
                 <span>{currentUser.displayName}</span>
                 {currentUser.verificationStatus === 'verified' && (
@@ -361,6 +382,16 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
         {/* Action icons */}
         <div className="flex items-center gap-1">
+          {currentUser && (
+            <button
+              onClick={() => setPhotoUploaderOpen(true)}
+              className="p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-900 transition"
+              title="Change Profile Photo (Camera & Studio)"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+          )}
+
           {isAdminRole && (
             <button
               onClick={onOpenAdmin}
@@ -396,6 +427,22 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Profile Photo Uploader & Camera Studio */}
+      {photoUploaderOpen && currentUser && (
+        <PhotoUploaderModal
+          isOpen={photoUploaderOpen}
+          onClose={() => setPhotoUploaderOpen(false)}
+          currentPhotoUrl={currentUser.avatarUrl}
+          onPhotoSelected={async (newUrl) => {
+            if (newUrl) {
+              await updateProfile({ avatarUrl: newUrl });
+            }
+          }}
+          title="Change Profile Photo"
+          aspectRatio="circle"
+        />
+      )}
     </div>
   );
 };

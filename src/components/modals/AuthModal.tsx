@@ -206,6 +206,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         });
 
         if (!result.success) {
+          // Attempt backend verification fallback so preview code works seamlessly even if Firebase carrier SMS is delayed
+          const fallback = await verifyPhoneOtp(fullPhoneString, fullCode, {
+            displayName: profileName.trim() || undefined,
+            avatarUrl: avatarUrl || undefined,
+          });
+          if (fallback.success) {
+            if (fallback.isNewUser) {
+              setPhoneStep(3);
+            } else {
+              setSuccessMsg('Phone verified successfully!');
+              setTimeout(() => onClose(), 600);
+            }
+            return;
+          }
           setError(result.error || 'Verification code is invalid.');
           return;
         }
@@ -692,6 +706,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                               <ArrowRight className="w-3.5 h-3.5" />
                             </>
                           )}
+                        </button>
+                      </div>
+
+                      {/* Firebase Invisible / Visible reCAPTCHA Anchor Container */}
+                      <div id="recaptcha-container" className="my-1 flex justify-center"></div>
+
+                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60">
+                        <span className="text-slate-500">Testing phone auth?</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCountry({ name: 'United States', code: '+1', flag: '🇺🇸', placeholder: '(555) 010-0001' });
+                            setPhoneNumber('5550100001');
+                          }}
+                          className="text-cyan-400 hover:underline font-mono"
+                        >
+                          Use Test Number
                         </button>
                       </div>
 

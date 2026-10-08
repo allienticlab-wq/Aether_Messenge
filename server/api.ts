@@ -1182,6 +1182,270 @@ apiRouter.post('/admin/users/:id/role', requireAuth, requireRole(['super_admin',
   res.json({ success: true, user: db.toPublicProfile(target) });
 });
 
+// Full User Management Edit
+apiRouter.put('/admin/users/:id', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const targetId = req.params.id;
+  const {
+    displayName,
+    username,
+    email,
+    phone,
+    avatarUrl,
+    about,
+    customStatus,
+    role,
+    verificationStatus,
+    verificationCategory,
+    verificationReason,
+    emailVerified,
+    phoneVerified,
+    newPassword,
+    isBanned,
+    banReason,
+  } = req.body;
+
+  const target = db.getUserById(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  if (displayName && displayName.trim()) target.displayName = displayName.trim();
+  if (username && username.trim()) {
+    const cleanUser = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
+    const existing = db.getUserByUsername(cleanUser);
+    if (existing && existing.id !== target.id) {
+      return res.status(400).json({ error: 'Username is already taken.' });
+    }
+    target.username = cleanUser;
+  }
+  if (email !== undefined) {
+    const cleanEmail = email.toLowerCase().trim();
+    if (cleanEmail) {
+      const existing = db.getUserByEmail(cleanEmail);
+      if (existing && existing.id !== target.id) {
+        return res.status(400).json({ error: 'Email address is already in use.' });
+      }
+    }
+    target.email = cleanEmail;
+  }
+  if (phone !== undefined) {
+    target.phone = phone.trim();
+  }
+  if (avatarUrl !== undefined) target.avatarUrl = avatarUrl;
+  if (about !== undefined) target.about = about.trim();
+  if (customStatus !== undefined) target.customStatus = customStatus.trim();
+  if (role) target.role = role as UserRole;
+  if (verificationStatus) target.verificationStatus = verificationStatus;
+  if (verificationCategory !== undefined) target.verificationCategory = verificationCategory;
+  if (verificationReason !== undefined) target.verificationReason = verificationReason;
+  if (verificationStatus === 'verified' && !target.verifiedAt) {
+    target.verifiedAt = new Date().toISOString();
+  }
+  if (emailVerified !== undefined) target.emailVerified = !!emailVerified;
+  if (phoneVerified !== undefined) target.phoneVerified = !!phoneVerified;
+  if (isBanned !== undefined) target.isBanned = !!isBanned;
+  if (banReason !== undefined) target.banReason = banReason;
+
+  if (newPassword && newPassword.trim()) {
+    target.passwordHash = crypto.createHash('sha256').update(newPassword.trim() + '_aether_salt_2026').digest('hex');
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_EDITED', 'user', targetId, {
+    displayName: target.displayName,
+    username: target.username,
+    role: target.role,
+    verificationStatus: target.verificationStatus,
+  });
+
+  res.json({ success: true, user: db.toPublicProfile(target) });
+});
+
+// Admin User Delete / Purge
+apiRouter.delete('/admin/users/:id', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const targetId = req.params.id;
+
+  if (targetId === actor.id) {
+    return res.status(400).json({ error: 'Cannot delete your own administrator account.' });
+  }
+
+  const target = db.getUserById(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  db.state.users.delete(targetId);
+
+  // Revoke user sessions
+  for (const [sessId, sess] of db.state.sessions.entries()) {
+    if (sess.userId === targetId) {
+      db.state.sessions.delete(sessId);
+    }
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_DELETED', 'user', targetId, {
+    username: target.username,
+  });
+
+  res.json({ success: true, message: `Account @${target.username} has been deleted.` });
+});
+
+// Admin Provision New User Directly
+apiRouter.post('/admin/users', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const { displayName, username, email, phone, role, password, avatarUrl, verificationStatus, verificationCategory } = req.body;
+
+  if (!displayName || !username) {
+    return res.status(400).json({ error: 'Display name and username are required.' });
+  }
+
+  const cleanUser = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
+  if (db.getUserByUsername(cleanUser)) {
+    return res.status(400).json({ error: 'Username is already taken.' });
+  }
+
+  const cleanEmail = email ? email.toLowerCase().trim() : undefined;
+  if (cleanEmail && db.getUserByEmail(cleanEmail)) {
+    return res.status(400).json({ error: 'Email is already in use.' });
+  }
+
+  const cleanPhone = phone ? phone.trim() : undefined;
+  if (cleanPhone && db.getUserByPhone(cleanPhone)) {
+    return res.status(400).json({ error: 'Phone number is already associated with another account.' });
+  }
+
+  const newUser = db.createUser({
+    displayName: displayName.trim(),
+    username: cleanUser,
+    email: cleanEmail,
+    phone: cleanPhone,
+    role: role || 'user',
+    password: password || 'Welcome2026!',
+  });
+
+  if (avatarUrl) {
+    newUser.avatarUrl = avatarUrl;
+  }
+
+  if (verificationStatus) {
+    newUser.verificationStatus = verificationStatus;
+    newUser.verificationCategory = verificationCategory || 'individual';
+    if (verificationStatus === 'verified') {
+      newUser.verifiedAt = new Date().toISOString();
+    }
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_CREATED', 'user', newUser.id, {
+    username: cleanUser,
+    role: newUser.role,
+  });
+
+  res.json({ success: true, user: db.toPublicProfile(newUser) });
+});
+
+// Admin Force Revoke All Sessions for User
+apiRouter.post('/admin/users/:id/reset-sessions', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const targetId = req.params.id;
+
+  const target = db.getUserById(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  let revokedCount = 0;
+  for (const [sessId, sess] of db.state.sessions.entries()) {
+    if (sess.userId === targetId) {
+      db.state.sessions.delete(sessId);
+      revokedCount++;
+    }
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_SESSIONS_REVOKED', 'user', targetId, {
+    revokedCount,
+  });
+
+  res.json({ success: true, message: `Revoked ${revokedCount} active session(s) for @${target.username}.` });
+});
+
+// Admin Firebase Diagnostics & Auth Test Suite
+apiRouter.get('/admin/firebase/status', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  res.json({
+    projectId: 'cohesive-photon-510805-h5',
+    authDomain: 'cohesive-photon-510805-h5.firebaseapp.com',
+    firestoreDatabaseId: 'ai-studio-aethermessenger-2e8f77a1-9287-4891-8ca4-88915c4d2614',
+    appId: '1:353612644607:web:692912c2929e11617e0cca',
+    storageBucket: 'cohesive-photon-510805-h5.firebasestorage.app',
+    status: 'connected',
+    providersConfigured: ['phone', 'email', 'google'],
+    testNumbersSupported: true,
+  });
+});
+
+apiRouter.post('/admin/firebase/test-otp', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
+  const { phone } = req.body;
+  const targetPhone = phone || '+15550192834';
+
+  const otp = db.createOtp(targetPhone, 'phone_verify');
+  const smsResult = await smsService.sendOtp(targetPhone, otp.code, db.state.branding.appShortName);
+
+  db.state.outboxSms.unshift({
+    id: smsResult.messageId,
+    to: targetPhone,
+    body: `[Firebase Auth Test] Your ${db.state.branding.appShortName} verification code is: ${otp.code}`,
+    status: 'delivered',
+    sentAt: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    message: `Test OTP dispatched to ${targetPhone}`,
+    previewCode: otp.code,
+    provider: smsResult.provider,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+apiRouter.post('/admin/firebase/verify-test-otp', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const { phone, code } = req.body;
+  if (!code) {
+    return res.status(400).json({ success: false, error: 'Verification code is required.' });
+  }
+  const targetPhone = phone || '+15550192834';
+  const result = db.verifyOtp(targetPhone, code, 'phone_verify');
+  if (!result.success) {
+    return res.status(400).json({ success: false, error: result.error || 'Invalid code' });
+  }
+  res.json({
+    success: true,
+    message: `Verification code ${code} validated successfully for ${targetPhone}!`,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+apiRouter.post('/admin/firebase/test-email', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const { email } = req.body;
+  const targetEmail = email || 'test@example.com';
+
+  const testOtp = db.createOtp(targetEmail, 'email_verify');
+  const emailTemplate = renderEmailTemplate(
+    'email_verification',
+    { recipientName: 'Test Administrator', otpCode: testOtp.code, expiresInMinutes: 10 },
+    db.state.branding
+  );
+
+  db.state.outboxEmails.unshift({
+    id: `email_${Date.now()}`,
+    to: targetEmail,
+    subject: emailTemplate.subject,
+    html: emailTemplate.html,
+    template: 'email_verification',
+    sentAt: new Date().toISOString(),
+  });
+
+  res.json({
+    success: true,
+    message: `Test verification email sent to ${targetEmail}`,
+    previewOtp: testOtp.code,
+    subject: emailTemplate.subject,
+  });
+});
+
 apiRouter.post('/admin/users/:id/ban', requireAuth, requireRole(['super_admin', 'admin', 'moderator']), (req: Request, res: Response) => {
   const actor = (req as any).user;
   const targetId = req.params.id;

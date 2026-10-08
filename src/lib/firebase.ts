@@ -53,10 +53,12 @@ let recaptchaVerifierInstance: RecaptchaVerifier | null = null;
  * Initializes or re-initializes the Firebase RecaptchaVerifier for Phone Authentication
  * Follows: https://firebase.google.com/docs/auth/web/phone-auth
  */
-export function getOrCreateRecaptchaVerifier(containerId: string): RecaptchaVerifier {
-  const container = document.getElementById(containerId);
-  if (!container) {
-    throw new Error(`reCAPTCHA container element #${containerId} not found in DOM`);
+export function getOrCreateRecaptchaVerifier(containerId = 'recaptcha-container'): RecaptchaVerifier {
+  let container = document.getElementById(containerId);
+  if (!container && typeof document !== 'undefined') {
+    container = document.createElement('div');
+    container.id = containerId;
+    document.body.appendChild(container);
   }
 
   // Clear previous instance if attached to different container or stale
