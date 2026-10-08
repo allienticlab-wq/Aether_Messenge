@@ -22,7 +22,8 @@ import {
   Smile,
   Info,
   CheckCircle2,
-  Plus
+  Plus,
+  AlertCircle
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PhotoLightboxModal } from '../common/PhotoLightboxModal.js';
@@ -461,15 +462,34 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             {isMe && (
-              <span>
+              <span
+                className="inline-flex items-center ml-0.5 cursor-help"
+                title={
+                  message.status === 'read'
+                    ? message.readBy && message.readBy.length > 0
+                      ? `Read at ${new Date(message.readBy[0].readAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${
+                          isGroup ? ` by ${message.readBy.length} member(s)` : ''
+                        }`
+                      : 'Read by recipient'
+                    : message.status === 'delivered'
+                    ? 'Delivered to recipient device'
+                    : message.status === 'sent'
+                    ? 'Sent to server'
+                    : message.status === 'failed'
+                    ? 'Failed to send'
+                    : 'Sending...'
+                }
+              >
                 {message.status === 'read' ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-cyan-200 stroke-[2.5]" />
+                  <CheckCheck className="w-3.5 h-3.5 text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.4)] stroke-[2.5]" />
                 ) : message.status === 'delivered' ? (
-                  <CheckCheck className="w-3.5 h-3.5 opacity-80" />
+                  <CheckCheck className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
                 ) : message.status === 'sent' ? (
-                  <Check className="w-3.5 h-3.5 opacity-80" />
+                  <Check className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
+                ) : message.status === 'failed' ? (
+                  <AlertCircle className="w-3 h-3 text-rose-400" />
                 ) : (
-                  <Clock className="w-3 h-3 animate-spin" />
+                  <Clock className="w-3 h-3 animate-spin opacity-70" />
                 )}
               </span>
             )}
@@ -731,8 +751,38 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Current Status:</span>
-                <span className="capitalize font-semibold text-cyan-400">{message.status}</span>
+                <span className="capitalize font-semibold text-cyan-400 flex items-center gap-1">
+                  {message.status === 'read' ? (
+                    <>
+                      <CheckCheck className="w-3.5 h-3.5 text-sky-400 stroke-[2.5]" />
+                      <span>Read</span>
+                    </>
+                  ) : message.status === 'delivered' ? (
+                    <>
+                      <CheckCheck className="w-3.5 h-3.5 text-slate-300 stroke-[2]" />
+                      <span>Delivered</span>
+                    </>
+                  ) : message.status === 'sent' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-slate-300 stroke-[2]" />
+                      <span>Sent</span>
+                    </>
+                  ) : (
+                    <span>{message.status}</span>
+                  )}
+                </span>
               </div>
+              {message.readBy && message.readBy.length > 0 && (
+                <div className="pt-2 border-t border-slate-800 space-y-1">
+                  <span className="text-[11px] font-semibold text-sky-300">Read Receipts ({message.readBy.length}):</span>
+                  {message.readBy.map((r, idx) => (
+                    <div key={idx} className="flex justify-between text-[11px] font-mono text-slate-400">
+                      <span>Reader ID: {r.userId.slice(0, 8)}...</span>
+                      <span>{new Date(r.readAt).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-400">Sender:</span>
                 <span>{message.sender?.displayName || 'User'} (@{message.sender?.username})</span>

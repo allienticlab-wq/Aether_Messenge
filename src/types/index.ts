@@ -283,3 +283,44 @@ export interface SystemHealth {
   databaseConnections: number;
   memoryUsageMb: number;
 }
+
+export interface MessageCentralConfig {
+  customerId: string;
+  apiKey: string;
+  authToken?: string;
+  senderId: string;
+  flowType: 'SMS' | 'WHATSAPP' | 'FALLBACK';
+  countryCode: string; // default "91"
+  otpLength: number; // default 6
+  otpTimeoutSeconds: number; // default 300
+  isLiveMode: boolean;
+  webhookUrl?: string;
+  lastTestedAt?: string;
+  lastTestStatus?: 'success' | 'failed' | 'pending';
+}
+
+export interface MessageCentralOtpLog {
+  id: string;
+  verificationId: string;
+  mobileNumber: string;
+  countryCode: string;
+  flowType: string;
+  previewCode?: string;
+  status: 'PENDING' | 'VERIFIED' | 'EXPIRED' | 'FAILED';
+  carrierResponse?: any;
+  createdAt: string;
+}
+
+export interface QrAuthSession {
+  sessionId: string;
+  token: string;
+  linkCode?: string;
+  status: 'pending' | 'authorized' | 'expired';
+  userId?: string;
+  userSessionId?: string;
+  userAgent?: string;
+  ipAddress?: string;
+  createdAt: number;
+  expiresAt: number;
+}
+

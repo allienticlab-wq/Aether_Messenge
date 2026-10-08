@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext.js';
 import { useBranding } from '../../context/BrandingContext.js';
 import {
@@ -58,14 +58,19 @@ import {
   Copy,
   Check,
   LogIn,
+  FileText,
+  ArrowRight,
   Filter,
   Globe,
   Terminal,
   HelpCircle,
+  Zap,
+  QrCode,
+  Laptop,
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
-import { firebaseConfig, firebaseApp, firebaseAuth } from '../../lib/firebase.js';
+import { MessageCentralConfig, MessageCentralOtpLog } from '../../types/index.js';
 
 interface AdminDashboardProps {
   isOpen?: boolean;
@@ -95,7 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     | 'notifications'
     | 'email'
     | 'sms'
-    | 'firebase'
+    | 'messagecentral'
     | 'branding'
     | 'flags'
     | 'health'
@@ -375,148 +380,205 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const runFirebaseDiagnostics = async () => {
-    setIsDiagnosingFirebase(true);
-    setDiagnosticResults([]);
+  // MessageCentral VerifyNow API State
+  const [mcConfig, setMcConfig] = useState<MessageCentralConfig>({
+    customerId: 'C-AETHERDEMO2026',
+    apiKey: 'dGVzdF9hcGlfa2V5X21lc3NhZ2VfY2VudHJhbF9pbmRpYV8yMDI2',
+    senderId: 'AETHER',
+    flowType: 'SMS',
+    countryCode: '91',
+    otpLength: 6,
+    otpTimeoutSeconds: 300,
+    isLiveMode: false,
+  });
+  const [mcLogs, setMcLogs] = useState<MessageCentralOtpLog[]>([]);
+  const [mcTestPhone, setMcTestPhone] = useState('9876543210');
+  const [mcTestFlow, setMcTestFlow] = useState<'SMS' | 'WHATSAPP'>('SMS');
+  const [mcTestResult, setMcTestResult] = useState<any>(null);
+  const [mcTestCode, setMcTestCode] = useState('');
+  const [mcValidateResult, setMcValidateResult] = useState<any>(null);
+  const [mcTokenResult, setMcTokenResult] = useState<any>(null);
+  const [isTestingToken, setIsTestingToken] = useState(false);
+  const [isSendingMcOtp, setIsSendingMcOtp] = useState(false);
+  const [isVerifyingMcOtp, setIsVerifyingMcOtp] = useState(false);
+  const [isUploadingMcConfig, setIsUploadingMcConfig] = useState(false);
+  const [rawConfigJson, setRawConfigJson] = useState('');
+  const mcFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const loadMessageCentralData = async () => {
     try {
-      const results: Array<{ name: string; status: 'ok' | 'warn' | 'error'; message: string }> = [];
-
-      // 1. Client SDK & Configuration Keys
-      if (firebaseConfig.apiKey && firebaseConfig.projectId) {
-        results.push({
-          name: 'Firebase Configuration Keys',
-          status: 'ok',
-          message: `Active project: ${firebaseConfig.projectId} (App ID: ${firebaseConfig.appId.substring(0, 16)}...)`,
-        });
-      } else {
-        results.push({
-          name: 'Firebase Configuration Keys',
-          status: 'error',
-          message: 'Firebase configuration keys missing in firebase-applet-config.json',
-        });
-      }
-
-      // 2. Client SDK Instance
-      if (firebaseApp && firebaseAuth) {
-        results.push({
-          name: 'Firebase Client Web SDK',
-          status: 'ok',
-          message: `Modular Auth & Core SDK initialized successfully. Auth Domain: ${firebaseConfig.authDomain}`,
-        });
-      } else {
-        results.push({
-          name: 'Firebase Client Web SDK',
-          status: 'warn',
-          message: 'Firebase SDK failed to initialize in browser context.',
-        });
-      }
-
-      // 3. Backend & Firestore Status
-      try {
-        const res = await fetch('/api/admin/firebase/status', {
-          headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
-        });
-        const data = await res.json();
-        setFirebaseStatus(data);
-        results.push({
-          name: 'Firestore Database Connection',
-          status: 'ok',
-          message: `Connected to firestoreDatabaseId: ${data.firestoreDatabaseId}`,
-        });
-      } catch {
-        results.push({
-          name: 'Firestore Database Connection',
-          status: 'warn',
-          message: 'Local fallback relay connected. Real Firestore synced via deployed security rules.',
-        });
-      }
-
-      // 4. Phone OTP SMS Gateway
-      results.push({
-        name: 'Phone OTP Provider & Carrier SMS',
-        status: 'ok',
-        message: 'Firebase signInWithPhoneNumber + RecaptchaVerifier active. Hybrid test SMS relay enabled.',
+      const res = await fetch('/api/admin/messagecentral', {
+        headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
       });
-
-      // 5. Email & Password Engine
-      results.push({
-        name: 'Email & Password Auth Engine',
-        status: 'ok',
-        message: 'Firebase signInWithEmailAndPassword & createUserWithEmailAndPassword operational with auto sync.',
-      });
-
-      setDiagnosticResults(results);
-    } finally {
-      setIsDiagnosingFirebase(false);
+      const data = await res.json();
+      if (data.config) setMcConfig(data.config);
+      if (data.logs) setMcLogs(data.logs);
+    } catch {
+      // Ignore
     }
   };
 
-  const handleTestOtp = async () => {
-    setIsSendingTestOtp(true);
-    setTestOtpResult(null);
-    setTestOtpVerifyResult(null);
+  const handleSaveMcConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      const res = await fetch('/api/admin/firebase/test-otp', {
-        method: 'POST',
+      const res = await fetch('/api/admin/messagecentral', {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': currentUser?.id || 'usr_admin',
         },
-        body: JSON.stringify({ phone: testOtpPhone }),
+        body: JSON.stringify(mcConfig),
       });
       const data = await res.json();
-      setTestOtpResult(data);
-      if (data.previewCode) {
-        setTestOtpVerifyCode(data.previewCode);
-      }
-      setActionMessage(`Test OTP dispatched: Code ${data.previewCode} sent to ${testOtpPhone}`);
-    } finally {
-      setIsSendingTestOtp(false);
-    }
-  };
-
-  const handleVerifyTestOtp = async () => {
-    if (!testOtpVerifyCode.trim()) return;
-    setIsVerifyingTestOtp(true);
-    setTestOtpVerifyResult(null);
-    try {
-      const res = await fetch('/api/admin/firebase/verify-test-otp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser?.id || 'usr_admin',
-        },
-        body: JSON.stringify({ phone: testOtpPhone, code: testOtpVerifyCode }),
-      });
-      const data = await res.json();
-      setTestOtpVerifyResult(data);
       if (res.ok) {
-        setActionMessage(`Code ${testOtpVerifyCode} validated successfully for ${testOtpPhone}!`);
+        setActionMessage('MessageCentral VerifyNow API credentials saved successfully!');
+        if (data.config) setMcConfig(data.config);
       } else {
-        setActionMessage(data.error || 'Verification failed');
+        alert(data.error || 'Failed to save configuration');
       }
-    } finally {
-      setIsVerifyingTestOtp(false);
+    } catch {
+      alert('Network error saving MessageCentral configuration.');
     }
   };
 
-  const handleTestEmailAuth = async () => {
-    setIsSendingTestAuth(true);
-    setTestAuthResult(null);
+  const handleUploadMcConfigFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingMcConfig(true);
     try {
-      const res = await fetch('/api/admin/firebase/test-email', {
+      const text = await file.text();
+      const res = await fetch('/api/admin/messagecentral/upload-config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': currentUser?.id || 'usr_admin',
         },
-        body: JSON.stringify({ email: testAuthEmail }),
+        body: JSON.stringify({ fileContent: text }),
       });
       const data = await res.json();
-      setTestAuthResult(data);
-      setActionMessage(`Test email sent to ${testAuthEmail}`);
+      if (res.ok) {
+        setActionMessage(data.message || 'Configuration uploaded and applied successfully!');
+        if (data.config) setMcConfig(data.config);
+      } else {
+        alert(data.error || 'Failed to apply configuration file');
+      }
+    } catch (err: any) {
+      alert(`Error reading file: ${err.message}`);
     } finally {
-      setIsSendingTestAuth(false);
+      setIsUploadingMcConfig(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleApplyRawJson = async () => {
+    if (!rawConfigJson.trim()) return;
+    setIsUploadingMcConfig(true);
+    try {
+      const parsed = JSON.parse(rawConfigJson);
+      const res = await fetch('/api/admin/messagecentral/upload-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || 'usr_admin',
+        },
+        body: JSON.stringify({ rawJson: parsed }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMessage('MessageCentral configuration parsed and saved!');
+        if (data.config) setMcConfig(data.config);
+        setRawConfigJson('');
+      } else {
+        alert(data.error || 'Failed to apply JSON');
+      }
+    } catch (err: any) {
+      alert(`Invalid JSON format: ${err.message}`);
+    } finally {
+      setIsUploadingMcConfig(false);
+    }
+  };
+
+  const handleTestMcToken = async () => {
+    setIsTestingToken(true);
+    setMcTokenResult(null);
+    try {
+      const res = await fetch('/api/admin/messagecentral/test-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || 'usr_admin',
+        },
+      });
+      const data = await res.json();
+      setMcTokenResult(data);
+      if (data.success) {
+        setActionMessage('MessageCentral CPaaS Bearer Token retrieved successfully!');
+      } else {
+        setActionMessage(data.error || 'Token request failed');
+      }
+    } finally {
+      setIsTestingToken(false);
+    }
+  };
+
+  const handleSendMcTestOtp = async () => {
+    setIsSendingMcOtp(true);
+    setMcTestResult(null);
+    setMcValidateResult(null);
+    try {
+      const res = await fetch('/api/admin/messagecentral/test-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || 'usr_admin',
+        },
+        body: JSON.stringify({
+          mobileNumber: mcTestPhone,
+          countryCode: mcConfig.countryCode || '91',
+          flowType: mcTestFlow,
+        }),
+      });
+      const data = await res.json();
+      setMcTestResult(data);
+      if (data.previewCode) {
+        setMcTestCode(data.previewCode);
+      }
+      setActionMessage(data.message || `OTP dispatched to +${mcConfig.countryCode || '91'} ${mcTestPhone}`);
+      loadMessageCentralData();
+    } finally {
+      setIsSendingMcOtp(false);
+    }
+  };
+
+  const handleValidateMcTestOtp = async () => {
+    if (!mcTestCode.trim()) return;
+    setIsVerifyingMcOtp(true);
+    setMcValidateResult(null);
+    try {
+      const res = await fetch('/api/admin/messagecentral/validate-test-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser?.id || 'usr_admin',
+        },
+        body: JSON.stringify({
+          verificationId: mcTestResult?.verificationId || '',
+          code: mcTestCode.trim(),
+          mobileNumber: mcTestPhone,
+          countryCode: mcConfig.countryCode || '91',
+        }),
+      });
+      const data = await res.json();
+      setMcValidateResult(data);
+      if (data.success) {
+        setActionMessage('OTP validated successfully via MessageCentral VerifyNow!');
+      } else {
+        setActionMessage(data.error || 'Validation failed');
+      }
+      loadMessageCentralData();
+    } finally {
+      setIsVerifyingMcOtp(false);
     }
   };
 
@@ -853,7 +915,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'notifications', label: 'Broadcast Alerts', icon: Bell },
     { id: 'email', label: 'Email & SMTP', icon: Mail },
     { id: 'sms', label: 'SMS Gateway', icon: Smartphone },
-    { id: 'firebase', label: 'Firebase & Auth Keys', icon: Flame },
+    { id: 'messagecentral', label: 'MessageCentral VerifyNow API', icon: Zap },
     { id: 'branding', label: 'White-Label Branding', icon: Sparkles },
     { id: 'flags', label: 'Feature Flags', icon: Sliders },
     { id: 'health', label: 'System Health', icon: Activity },
@@ -1914,300 +1976,539 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            {/* FIREBASE & AUTH KEYS TESTING SUITE */}
-            {activeTab === 'firebase' && (
-              <div className="space-y-6 max-w-4xl">
+            {/* MESSAGECENTRAL VERIFYNOW (INDIA OTP VERIFICATION) API DASHBOARD */}
+            {activeTab === 'messagecentral' && (
+              <div className="space-y-6 max-w-5xl">
+                {/* Header & Overview */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-700/60 text-amber-300 font-bold text-[10px] flex items-center gap-1">
-                        <Flame className="w-3 h-3 text-amber-400" />
-                        <span>GOOGLE FIREBASE SDK</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 font-bold text-[10px] flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-cyan-400" />
+                        <span>MESSAGECENTRAL VERIFYNOW CPaaS</span>
                       </span>
-                      <span className="text-[10px] text-emerald-400 font-medium">● Config Synced</span>
+                      <span className="text-[10px] text-emerald-400 font-medium">● CPaaS Pipeline Active</span>
                     </div>
-                    <h3 className="font-bold text-slate-100 text-sm mt-1">Firebase Authentication & API Keys Diagnostic Suite</h3>
+                    <h3 className="font-bold text-slate-100 text-sm mt-1">MessageCentral VerifyNow API (India & Global OTP Verification)</h3>
                     <p className="text-[11px] text-slate-400">
-                      Live testing & verification for Firebase credentials, Phone SMS OTP dispatch, and Email Authentication.
+                      High-throughput Indian mobile OTP verification (<a href="https://www.messagecentral.com/en-in/product/verify-now/api-india" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">MessageCentral VerifyNow</a>), API upload dashboard, and dedicated URI gateways.
                     </p>
                   </div>
-                  <button
-                    onClick={runFirebaseDiagnostics}
-                    disabled={isDiagnosingFirebase}
-                    className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs transition shadow-md flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isDiagnosingFirebase ? 'animate-spin' : ''}`} />
-                    <span>{isDiagnosingFirebase ? 'Running Tests...' : 'Run Diagnostics'}</span>
-                  </button>
-                </div>
-
-                {/* 1. Firebase Project Key Configuration Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-medium">PROJECT_ID</span>
-                    <div className="font-mono text-xs text-amber-400 truncate font-bold">{firebaseConfig.projectId}</div>
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleCopyKey(firebaseConfig.projectId, 'Project ID')}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 pt-1"
+                      onClick={loadMessageCentralData}
+                      className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs transition flex items-center gap-1.5"
                     >
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>{copiedKey === 'Project ID' ? 'Copied!' : 'Copy ID'}</span>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Refresh</span>
                     </button>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-medium">WEB_APP_ID</span>
-                    <div className="font-mono text-xs text-slate-200 truncate">{firebaseConfig.appId}</div>
-                    <button
-                      onClick={() => handleCopyKey(firebaseConfig.appId, 'App ID')}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 pt-1"
+                    <a
+                      href="https://www.messagecentral.com/en-in/product/verify-now/api-india"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
                     >
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>{copiedKey === 'App ID' ? 'Copied!' : 'Copy App ID'}</span>
-                    </button>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-medium">API_KEY (WEB CLIENT)</span>
-                    <div className="font-mono text-xs text-cyan-400 truncate">{firebaseConfig.apiKey.substring(0, 14)}...</div>
-                    <button
-                      onClick={() => handleCopyKey(firebaseConfig.apiKey, 'API Key')}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 pt-1"
-                    >
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>{copiedKey === 'API Key' ? 'Copied!' : 'Copy API Key'}</span>
-                    </button>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <span className="text-[10px] text-slate-400 font-medium">AUTH_DOMAIN</span>
-                    <div className="font-mono text-xs text-emerald-400 truncate">{firebaseConfig.authDomain}</div>
-                    <button
-                      onClick={() => handleCopyKey(firebaseConfig.authDomain, 'Auth Domain')}
-                      className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 pt-1"
-                    >
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>{copiedKey === 'Auth Domain' ? 'Copied!' : 'Copy Domain'}</span>
-                    </button>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>MessageCentral Docs</span>
+                    </a>
                   </div>
                 </div>
 
-                {/* 2. Live Diagnostics Checklist */}
-                {diagnosticResults.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Terminal className="w-4 h-4 text-cyan-400" />
-                        <h4 className="font-bold text-slate-100 text-xs">Diagnostic Verification Checklist</h4>
-                      </div>
-                      <span className="text-[10px] text-emerald-400 font-mono font-bold">ALL PASSING</span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {diagnosticResults.map((r, i) => (
-                        <div key={i} className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-2.5 text-xs">
-                          {r.status === 'ok' ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                          ) : r.status === 'warn' ? (
-                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                          ) : (
-                            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                          )}
-                          <div className="flex-1">
-                            <div className="font-bold text-slate-200">{r.name}</div>
-                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">{r.message}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Live Interactive Phone OTP Test Suite */}
-                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                {/* Subdomain & Dedicated URI Routing Status Card */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                     <div className="flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-cyan-400" />
-                      <h4 className="font-bold text-slate-100 text-xs">Phone Auth & OTP Live Verification Test</h4>
+                      <Globe className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-bold text-slate-100 text-xs">Dedicated System Subdomains & URI Separation</h4>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 font-medium">
-                      Firebase RecaptchaVerifier + SMS Relay
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 font-mono">
+                      Routing Configured
                     </span>
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    {/* Admin Portal URI */}
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Admin Portal</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono">LIVE</span>
+                      </div>
+                      <div className="font-mono text-[11px] text-cyan-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 truncate">
+                        admin.aether.xpeirserv.in
+                      </div>
+                      <div className="flex items-center gap-2 pt-1 text-[11px]">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText('https://admin.aether.xpeirserv.in');
+                            setActionMessage('Copied Admin Portal URL');
+                          }}
+                          className="text-slate-400 hover:text-white flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy URL</span>
+                        </button>
+                        <span>&bull;</span>
+                        <a href="/admin" className="text-cyan-400 hover:underline flex items-center gap-1">
+                          <span>Open View</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Web QR Login URI */}
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                          <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Web Login (QR)</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono">LIVE</span>
+                      </div>
+                      <div className="font-mono text-[11px] text-cyan-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 truncate">
+                        web.aether.xperiserv.in
+                      </div>
+                      <div className="flex items-center gap-2 pt-1 text-[11px]">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText('https://web.aether.xperiserv.in');
+                            setActionMessage('Copied Web QR Login Portal URL');
+                          }}
+                          className="text-slate-400 hover:text-white flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy URL</span>
+                        </button>
+                        <span>&bull;</span>
+                        <a href="/web" className="text-cyan-400 hover:underline flex items-center gap-1">
+                          <span>Open View</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Main Mobile Messenger URI */}
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Mobile Messenger</span>
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-mono">LIVE</span>
+                      </div>
+                      <div className="font-mono text-[11px] text-cyan-300 bg-slate-950 px-2 py-1 rounded border border-slate-800 truncate">
+                        aether.xperiserv.in
+                      </div>
+                      <div className="flex items-center gap-2 pt-1 text-[11px]">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText('https://aether.xperiserv.in');
+                            setActionMessage('Copied Mobile Messenger URL');
+                          }}
+                          className="text-slate-400 hover:text-white flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy URL</span>
+                        </button>
+                        <span>&bull;</span>
+                        <a href="/" className="text-cyan-400 hover:underline flex items-center gap-1">
+                          <span>Open View</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* API Credentials Manager & Configuration Form */}
+                <form onSubmit={handleSaveMcConfig} className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-bold text-slate-100 text-xs">MessageCentral VerifyNow API Credentials</h4>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={mcConfig.isLiveMode}
+                          onChange={(e) => setMcConfig({ ...mcConfig, isLiveMode: e.target.checked })}
+                          className="rounded border-slate-700 text-cyan-500"
+                        />
+                        <span className="font-semibold text-[11px]">Live CPaaS Mode (MessageCentral)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">Customer ID (customerId)</label>
+                      <input
+                        type="text"
+                        value={mcConfig.customerId}
+                        onChange={(e) => setMcConfig({ ...mcConfig, customerId: e.target.value })}
+                        placeholder="e.g. C-XXXXX"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">API Key / Secret (key)</label>
+                      <input
+                        type="password"
+                        value={mcConfig.apiKey}
+                        onChange={(e) => setMcConfig({ ...mcConfig, apiKey: e.target.value })}
+                        placeholder="Your MessageCentral API Key"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">Sender ID (DLT Header)</label>
+                      <input
+                        type="text"
+                        value={mcConfig.senderId}
+                        onChange={(e) => setMcConfig({ ...mcConfig, senderId: e.target.value })}
+                        placeholder="e.g. AETHER"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">OTP Flow Type</label>
+                      <select
+                        value={mcConfig.flowType}
+                        onChange={(e) => setMcConfig({ ...mcConfig, flowType: e.target.value as any })}
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="SMS">SMS Route (Primary)</option>
+                        <option value="WHATSAPP">WhatsApp Route</option>
+                        <option value="FALLBACK">WhatsApp + SMS Fallback</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">Country Code (Default)</label>
+                      <input
+                        type="text"
+                        value={mcConfig.countryCode}
+                        onChange={(e) => setMcConfig({ ...mcConfig, countryCode: e.target.value })}
+                        placeholder="91"
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-400 font-medium mb-1">OTP Code Length & Expiry</label>
+                      <div className="flex gap-2">
+                        <select
+                          value={mcConfig.otpLength}
+                          onChange={(e) => setMcConfig({ ...mcConfig, otpLength: Number(e.target.value) })}
+                          className="w-1/2 px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs"
+                        >
+                          <option value={6}>6 Digits</option>
+                          <option value={4}>4 Digits</option>
+                        </select>
+                        <select
+                          value={mcConfig.otpTimeoutSeconds}
+                          onChange={(e) => setMcConfig({ ...mcConfig, otpTimeoutSeconds: Number(e.target.value) })}
+                          className="w-1/2 px-2 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs"
+                        >
+                          <option value={300}>5 Mins</option>
+                          <option value={600}>10 Mins</option>
+                          <option value={120}>2 Mins</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="text-[11px] text-slate-500">
+                      Supports direct CPaaS bearer token generation and Indian telecom DLT compliance.
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTestMcToken}
+                        disabled={isTestingToken}
+                        className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                      >
+                        {isTestingToken ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />}
+                        <span>Test Auth Token</span>
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs transition shadow flex items-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Save Credentials</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {mcTokenResult && (
+                    <div className={`p-2.5 rounded-xl border text-[11px] font-mono ${mcTokenResult.success ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' : 'bg-rose-950/60 border-rose-800 text-rose-300'}`}>
+                      <div>{mcTokenResult.success ? '✓ CPaaS Token Generated Successfully' : `✕ Token Failed: ${mcTokenResult.error}`}</div>
+                      {mcTokenResult.token && <div className="truncate text-slate-400 text-[10px] mt-0.5">Bearer Token: {mcTokenResult.token}</div>}
+                    </div>
+                  )}
+                </form>
+
+                {/* Dashboard of API Upload (Upload JSON / .env / CSV File or Paste JSON) */}
+                <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-bold text-slate-100 text-xs">Dashboard of API Credentials Upload</h4>
+                    </div>
+                    <span className="text-[10px] text-cyan-400 font-mono">Auto-Parser Engine</span>
+                  </div>
+
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Test the complete Phone OTP pipeline by dispatching an SMS verification code to any phone number (e.g., standard or test phone number).
+                    Instantly upload your MessageCentral credentials file (<code>.json</code>, <code>.env</code>, or key-value CSV) or paste raw credentials JSON below to apply credentials with zero manual typing.
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Step 1: Send OTP */}
-                    <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                    {/* Method 1: File Upload */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Upload File (.json / .env / .csv)</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400">
+                          Supports environment files containing <code>CUSTOMER_ID=...</code> and <code>API_KEY=...</code>
+                        </p>
+                      </div>
+
+                      <div className="pt-2">
+                        <input
+                          type="file"
+                          ref={mcFileInputRef}
+                          onChange={handleUploadMcConfigFile}
+                          accept=".json,.env,.txt,.csv"
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => mcFileInputRef.current?.click()}
+                          disabled={isUploadingMcConfig}
+                          className="w-full py-2.5 px-3 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-800/80 text-cyan-300 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2"
+                        >
+                          {isUploadingMcConfig ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                          <span>Choose Credentials File</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Method 2: Paste Raw JSON */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
+                      <div className="font-semibold text-slate-200 text-xs flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Paste JSON Credentials Snippet</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRawConfigJson(JSON.stringify({
+                            customerId: "C-YOUR-ID",
+                            apiKey: "YOUR_KEY_HERE",
+                            senderId: "AETHER",
+                            flowType: "SMS",
+                            countryCode: "91",
+                            isLiveMode: true
+                          }, null, 2))}
+                          className="text-[10px] text-cyan-400 hover:underline font-mono"
+                        >
+                          Insert Template
+                        </button>
+                      </div>
+
+                      <textarea
+                        rows={3}
+                        value={rawConfigJson}
+                        onChange={(e) => setRawConfigJson(e.target.value)}
+                        placeholder='{"customerId": "C-12345", "apiKey": "xyz..."}'
+                        className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono text-[11px] focus:outline-none focus:border-cyan-500"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleApplyRawJson}
+                        disabled={isUploadingMcConfig || !rawConfigJson.trim()}
+                        className="w-full py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-semibold rounded-lg text-xs transition"
+                      >
+                        Apply Parsed Credentials
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Interactive OTP Test Runner */}
+                <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-bold text-slate-100 text-xs">Live Interactive OTP Dispatch & Validation Test</h4>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 font-medium">
+                      India 🇮🇳 (+91) Ready
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Test Dispatch */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
                       <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
                         <span className="w-4 h-4 rounded-full bg-cyan-950 border border-cyan-700 text-cyan-300 flex items-center justify-center text-[10px]">1</span>
                         <span>Dispatch Test OTP Code</span>
                       </div>
+
                       <div className="space-y-1.5">
-                        <label className="text-[11px] text-slate-400">Target Phone Number (E.164 format):</label>
+                        <label className="text-[11px] text-slate-400">Recipient Mobile Number:</label>
                         <div className="flex gap-2">
+                          <span className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-cyan-400 font-mono text-xs select-none">
+                            +{mcConfig.countryCode || '91'}
+                          </span>
                           <input
                             type="tel"
-                            value={testOtpPhone}
-                            onChange={(e) => setTestOtpPhone(e.target.value)}
-                            placeholder="+15550192834 or +919876543210"
-                            className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs flex-1 font-mono focus:outline-none focus:border-cyan-500"
+                            value={mcTestPhone}
+                            onChange={(e) => setMcTestPhone(e.target.value)}
+                            placeholder="9876543210"
+                            className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-cyan-500"
                           />
-                          <button
-                            type="button"
-                            onClick={handleTestOtp}
-                            disabled={isSendingTestOtp}
-                            className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-xs transition disabled:opacity-50 shrink-0"
-                          >
-                            {isSendingTestOtp ? 'Sending...' : 'Send Test OTP'}
-                          </button>
                         </div>
                       </div>
 
-                      {testOtpResult && (
-                        <div className="p-2.5 rounded-lg bg-cyan-950/60 border border-cyan-800/80 space-y-1 font-mono text-[11px] text-cyan-300">
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setMcTestFlow('SMS')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium transition ${mcTestFlow === 'SMS' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400'}`}
+                          >
+                            SMS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMcTestFlow('WHATSAPP')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium transition ${mcTestFlow === 'WHATSAPP' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'text-slate-400'}`}
+                          >
+                            WhatsApp
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleSendMcTestOtp}
+                          disabled={isSendingMcOtp}
+                          className="px-4 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs transition shadow disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                          {isSendingMcOtp ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                          <span>Dispatch OTP</span>
+                        </button>
+                      </div>
+
+                      {mcTestResult && (
+                        <div className="p-2.5 rounded-xl bg-cyan-950/60 border border-cyan-800 space-y-1 text-[11px] font-mono text-cyan-300">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold">STATUS: CODE DISPATCHED</span>
+                            <strong>STATUS: {mcTestResult.success ? 'DISPATCHED' : 'FAILED'}</strong>
                             <span className="text-emerald-400">✓ Delivered</span>
                           </div>
-                          <div>Target: <strong>{testOtpResult.previewCode ? testOtpPhone : ''}</strong></div>
-                          <div className="text-amber-300 font-bold text-xs">
-                            Active OTP Code: <span className="bg-amber-950 px-1.5 py-0.5 rounded border border-amber-700/80 text-white tracking-widest">{testOtpResult.previewCode}</span>
-                          </div>
-                          <div className="text-[10px] text-slate-400">Provider Relay: {testOtpResult.provider}</div>
+                          <div>Verification ID: <span className="text-slate-300">{mcTestResult.verificationId}</span></div>
+                          {mcTestResult.previewCode && (
+                            <div className="text-amber-300 font-bold">
+                              Test Code: <span className="bg-amber-950 px-2 py-0.5 rounded border border-amber-800 tracking-widest text-white">{mcTestResult.previewCode}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {/* Step 2: Validate OTP */}
-                    <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
+                    {/* Test Validation */}
+                    <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
                       <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
                         <span className="w-4 h-4 rounded-full bg-cyan-950 border border-cyan-700 text-cyan-300 flex items-center justify-center text-[10px]">2</span>
-                        <span>Verify Code & Confirm Pipeline</span>
+                        <span>Validate OTP via VerifyNow</span>
                       </div>
+
                       <div className="space-y-1.5">
-                        <label className="text-[11px] text-slate-400">Enter 6-Digit Verification Code:</label>
+                        <label className="text-[11px] text-slate-400">Enter OTP Code Received:</label>
                         <div className="flex gap-2">
                           <input
                             type="text"
                             maxLength={6}
-                            value={testOtpVerifyCode}
-                            onChange={(e) => setTestOtpVerifyCode(e.target.value)}
+                            value={mcTestCode}
+                            onChange={(e) => setMcTestCode(e.target.value)}
                             placeholder="e.g. 123456"
-                            className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs flex-1 font-mono tracking-widest focus:outline-none focus:border-cyan-500"
+                            className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono text-sm tracking-widest focus:outline-none focus:border-cyan-500"
                           />
                           <button
                             type="button"
-                            onClick={handleVerifyTestOtp}
-                            disabled={isVerifyingTestOtp || !testOtpVerifyCode.trim()}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs transition disabled:opacity-50 shrink-0"
+                            onClick={handleValidateMcTestOtp}
+                            disabled={isVerifyingMcOtp || !mcTestCode.trim()}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs transition shadow disabled:opacity-50"
                           >
-                            {isVerifyingTestOtp ? 'Verifying...' : 'Validate Code'}
+                            {isVerifyingMcOtp ? 'Validating...' : 'Validate Code'}
                           </button>
                         </div>
                       </div>
 
-                      {testOtpVerifyResult && (
-                        <div className={`p-2.5 rounded-lg border font-mono text-[11px] space-y-1 ${
-                          testOtpVerifyResult.success
-                            ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-300'
-                            : 'bg-rose-950/60 border-rose-800/80 text-rose-300'
-                        }`}>
-                          <div className="font-bold">
-                            {testOtpVerifyResult.success ? '✓ VERIFICATION SUCCESSFUL' : '✕ VERIFICATION FAILED'}
-                          </div>
-                          <div>{testOtpVerifyResult.message || testOtpVerifyResult.error}</div>
+                      {mcValidateResult && (
+                        <div className={`p-2.5 rounded-xl border font-mono text-[11px] space-y-1 ${mcValidateResult.success ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300' : 'bg-rose-950/60 border-rose-800 text-rose-300'}`}>
+                          <div className="font-bold">{mcValidateResult.success ? '✓ VERIFICATION_COMPLETED' : '✕ VERIFICATION_FAILED'}</div>
+                          <div>{mcValidateResult.message || mcValidateResult.error}</div>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* 4. Live Test Email Auth */}
-                <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                {/* Live MessageCentral Outbox & Verification Logs */}
+                <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-cyan-400" />
-                      <h4 className="font-bold text-slate-100 text-xs">Email Auth & Verification Engine Test</h4>
+                      <Terminal className="w-4 h-4 text-cyan-400" />
+                      <h4 className="font-bold text-slate-100 text-xs">MessageCentral VerifyNow Live Dispatch Logs ({mcLogs.length})</h4>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900 text-slate-300 border border-slate-800 font-medium">
-                      Firebase Email & Password / OTP Relay
-                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">Last 200 dispatches</span>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      type="email"
-                      value={testAuthEmail}
-                      onChange={(e) => setTestAuthEmail(e.target.value)}
-                      placeholder="recipient@domain.com"
-                      className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-100 text-xs flex-1 font-mono focus:outline-none focus:border-cyan-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleTestEmailAuth}
-                      disabled={isSendingTestAuth}
-                      className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs transition disabled:opacity-50"
-                    >
-                      {isSendingTestAuth ? 'Dispatching...' : 'Send Test Verification Email'}
-                    </button>
-                  </div>
-
-                  {testAuthResult && (
-                    <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1 font-mono text-[11px] text-cyan-300">
-                      <div>Status: <strong>{testAuthResult.message}</strong></div>
-                      <div>Preview OTP Code: <strong className="text-amber-300">{testAuthResult.previewOtp}</strong></div>
-                      <div>Subject: {testAuthResult.subject}</div>
+                  {mcLogs.length === 0 ? (
+                    <div className="py-8 text-center text-slate-500 text-xs">
+                      No verification requests logged yet. Use the test runner above or mobile app to trigger an OTP.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 font-mono text-[11px] max-h-60 overflow-y-auto">
+                      {mcLogs.slice(0, 15).map((log, idx) => (
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span className={`w-2 h-2 rounded-full ${log.status === 'VERIFIED' ? 'bg-emerald-400' : log.status === 'PENDING' ? 'bg-amber-400' : 'bg-slate-400'}`} />
+                            <span className="text-slate-200 font-semibold">+{log.countryCode} {log.mobileNumber}</span>
+                            <span className="text-cyan-400">({log.flowType})</span>
+                            <span className="text-slate-500 truncate">ID: {log.verificationId}</span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {log.previewCode && (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-bold">
+                                {log.previewCode}
+                              </span>
+                            )}
+                            <span className={`font-semibold ${log.status === 'VERIFIED' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {log.status}
+                            </span>
+                            <span className="text-slate-500 text-[10px]">
+                              {new Date(log.createdAt).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
-                </div>
-
-                {/* 5. Firebase Console Troubleshooting & Instructions Card */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border border-slate-800 space-y-3 text-xs">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <HelpCircle className="w-4 h-4 text-amber-400" />
-                      <h4 className="font-bold text-slate-100 text-xs">Firebase Console Setup & Phone Auth Rules</h4>
-                    </div>
-                    <span className="text-[10px] text-amber-400 font-semibold">Important Guide</span>
-                  </div>
-
-                  <div className="space-y-2 text-[11px] text-slate-300 leading-relaxed">
-                    <p>
-                      <strong>1. Enable Sign-In Providers in Firebase Console:</strong> To use Firebase Phone Auth & Email Auth in production, visit the Firebase Console for your project:
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-0.5">
-                      <a
-                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-800/80 text-amber-300 hover:bg-amber-900 flex items-center gap-1 font-semibold transition"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        <span>Firebase Console: Sign-in Providers</span>
-                      </a>
-                      <a
-                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/rules`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1 transition"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        <span>Firestore Security Rules</span>
-                      </a>
-                    </div>
-
-                    <p className="pt-1">
-                      <strong>2. Testing Phone Numbers (Zero Carrier Charges):</strong> In the Firebase Console under <em>Authentication &gt; Sign-in method &gt; Phone</em>, expand <strong>Phone numbers for testing</strong>. Add numbers like <code>+1 555-010-0001</code> with code <code>123456</code>. These numbers bypass reCAPTCHA and bypass carrier SMS quotas!
-                    </p>
-
-                    <p>
-                      <strong>3. Hybrid Fail-Safe Protection:</strong> If Firebase carrier SMS is ever delayed or blocked by iframe origin restrictions in preview, our system automatically falls back to secure server OTP delivery so users and administrators can always sign in smoothly without friction.
-                    </p>
-                  </div>
                 </div>
               </div>
             )}

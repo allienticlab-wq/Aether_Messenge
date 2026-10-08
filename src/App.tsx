@@ -52,10 +52,23 @@ function MessengerApp() {
     infoDrawerOpen,
     setInfoDrawerOpen,
     chats,
+    isWsConnected,
   } = useChat();
 
   // Top-level View Mode: 'messenger' | 'admin' | 'split'
-  const [viewMode, setViewMode] = useState<'messenger' | 'admin' | 'split'>('messenger');
+  const [viewMode, setViewMode] = useState<'messenger' | 'admin' | 'split'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hostname = window.location.hostname.toLowerCase();
+        const pathname = window.location.pathname.toLowerCase();
+        const searchPortal = new URLSearchParams(window.location.search).get('portal');
+        if (hostname.startsWith('admin.') || pathname.startsWith('/admin') || searchPortal === 'admin') {
+          return 'admin';
+        }
+      }
+    } catch {}
+    return 'messenger';
+  });
 
   // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -76,6 +89,20 @@ function MessengerApp() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  // Check URL gateway paths on mount
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hostname = window.location.hostname.toLowerCase();
+        const pathname = window.location.pathname.toLowerCase();
+        const searchPortal = new URLSearchParams(window.location.search).get('portal');
+        if (hostname.startsWith('web.') || pathname.startsWith('/web') || searchPortal === 'web') {
+          setAuthModalOpen(true);
+        }
+      }
+    } catch {}
+  }, []);
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -92,14 +119,14 @@ function MessengerApp() {
       (currentUser.role === 'super_admin' || currentUser.role === 'admin')
   );
 
-  // If user is not logged in as admin, force viewMode to messenger
+  // If user is definitely not admin, fallback to messenger
   useEffect(() => {
-    if (!isAdminRole && (viewMode === 'admin' || viewMode === 'split')) {
+    if (!isLoading && currentUser && !isAdminRole && (viewMode === 'admin' || viewMode === 'split')) {
       setViewMode('messenger');
     }
-  }, [isAdminRole, viewMode]);
+  }, [isLoading, currentUser, isAdminRole, viewMode]);
 
-  // Prompt login if user is not authenticated on load
+  // Prompt login only if user is definitely missing and finished loading
   useEffect(() => {
     if (!isLoading && !currentUser) {
       setAuthModalOpen(true);
@@ -126,7 +153,7 @@ function MessengerApp() {
             <span className="font-bold text-xs tracking-tight text-slate-100 hidden sm:inline">{branding.appName}</span>
           </div>
 
-          {/* Core View Switcher Controls - ONLY visible to authenticated Admins */}
+          {/* Core View Switcher Controls (Shown ONLY to authenticated administrators) */}
           {isAdminRole && (
             <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-800 p-0.5 rounded-xl text-xs">
               <button
@@ -168,6 +195,18 @@ function MessengerApp() {
               </button>
             </div>
           )}
+
+          {/* Realtime WS Indicator */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 border border-slate-800 text-[11px] font-mono">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isWsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400 animate-ping'
+              }`}
+            />
+            <span className={isWsConnected ? 'text-emerald-400 font-semibold' : 'text-cyan-400'}>
+              {isWsConnected ? 'Live Realtime' : 'Syncing...'}
+            </span>
+          </div>
         </div>
 
         {/* Right Status Badges & Account Profile */}
@@ -193,7 +232,7 @@ function MessengerApp() {
               {currentUser?.displayName ? currentUser.displayName.split(' ')[0] : 'Sign In'}
             </span>
             {currentUser?.verificationStatus === 'verified' && (
-              <VerifiedBadge status="verified" category={currentUser?.verificationCategory} size="sm" />
+              <VerifiedBadge status="verified" category={currentUser?.verificationCategory} size="sm" asSpan showPopover={false} />
             )}
             {currentUser && <ChevronDown className="w-3 h-3 text-slate-400" />}
           </button>

@@ -56,7 +56,6 @@ async function bootstrap() {
   if (!process.env.DISABLE_SECONDARY_PORT) {
     try {
       const secondaryServer = http.createServer(app);
-      wsManager.initialize(secondaryServer);
       secondaryServer.on('error', (err: any) => {
         // Silently ignore if port 80 requires unprivileged permissions or is already bound
         console.log(`[Aether Platform] Secondary port ${secondaryPort} listener skipped (${err.code || err.message}), primary port ${PORT} active.`);

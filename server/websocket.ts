@@ -15,7 +15,21 @@ export class WebSocketManager {
   private clients: Map<string, Set<AuthenticatedClient>> = new Map(); // userId -> Set of clients (multi-device)
 
   public initialize(server: Server) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
+    if (this.wss) return;
+    this.wss = new WebSocketServer({ noServer: true });
+
+    server.on('upgrade', (req, socket, head) => {
+      try {
+        const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+        if (url.pathname === '/ws') {
+          this.wss!.handleUpgrade(req, socket, head, (ws) => {
+            this.wss!.emit('connection', ws, req);
+          });
+        }
+      } catch {
+        socket.destroy();
+      }
+    });
 
     this.wss.on('connection', (ws: WebSocket, req) => {
       const url = new URL(req.url || '', `http://${req.headers.host}`);
@@ -131,7 +145,8 @@ export class WebSocketManager {
       case 'mark_read': {
         const { chatId, messageIds } = payload;
         const now = new Date().toISOString();
-        if (Array.isArray(messageIds)) {
+        const updatedIds: string[] = [];
+        if (Array.isArray(messageIds) && messageIds.length > 0) {
           for (const mid of messageIds) {
             const m = db.state.messages.get(mid);
             if (m && m.chatId === chatId) {
@@ -140,12 +155,26 @@ export class WebSocketManager {
               if (!m.readBy.some(r => r.userId === client.userId)) {
                 m.readBy.push({ userId: client.userId, readAt: now });
               }
+              updatedIds.push(m.id);
+            }
+          }
+        } else {
+          for (const m of db.state.messages.values()) {
+            if (m.chatId === chatId && m.senderId !== client.userId) {
+              m.status = 'read';
+              if (!m.readBy) m.readBy = [];
+              if (!m.readBy.some(r => r.userId === client.userId)) {
+                m.readBy.push({ userId: client.userId, readAt: now });
+              }
+              updatedIds.push(m.id);
             }
           }
         }
+        const chat = db.state.chats.get(chatId);
+        if (chat) chat.unreadCount = 0;
         this.broadcastToChat(chatId, {
           type: 'messages_read',
-          payload: { chatId, userId: client.userId, messageIds, readAt: now },
+          payload: { chatId, userId: client.userId, messageIds: updatedIds, readAt: now },
         });
         break;
       }

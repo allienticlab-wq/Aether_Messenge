@@ -24,6 +24,7 @@ export interface VerifiedBadgeProps {
   username?: string;
   displayName?: string;
   showPopover?: boolean;
+  asSpan?: boolean;
   verifiedAt?: string;
   className?: string;
 }
@@ -54,12 +55,13 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
   username,
   displayName,
   showPopover = true,
+  asSpan = false,
   verifiedAt,
   className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -215,16 +217,25 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
     }
   };
 
+  const isInteractive = showPopover && !asSpan;
+
   return (
     <span className={`relative inline-flex items-center shrink-0 align-middle ${className}`}>
-      {/* Interactive Trigger Button with Scalloped Rosette Seal */}
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={togglePopover}
-        title={`Verified Account: ${config.label} (Click for details)`}
+      {/* Interactive Trigger (rendered as span to prevent invalid nested buttons in HTML) */}
+      <span
+        ref={triggerRef as any}
+        role={isInteractive ? 'button' : undefined}
+        tabIndex={isInteractive ? 0 : undefined}
+        onClick={isInteractive ? togglePopover : undefined}
+        onKeyDown={isInteractive ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            togglePopover(e as any);
+          }
+        } : undefined}
+        title={`Verified Account: ${config.label}${isInteractive ? ' (Click for details)' : ''}`}
         className={`inline-flex items-center rounded-full transition-transform duration-150 focus:outline-none ${
-          showPopover ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'
+          isInteractive ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'
         }`}
         aria-label={`Verified badge: ${config.label}`}
       >
@@ -267,7 +278,7 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
             </span>
           </span>
         )}
-      </button>
+      </span>
 
       {/* Interactive Verification Details Popover */}
       {showPopover && isOpen && (
@@ -326,14 +337,22 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
               </div>
             </div>
 
-            <button
+            <span
+              role="button"
+              tabIndex={0}
               onClick={() => setIsOpen(false)}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition shrink-0"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setIsOpen(false);
+                }
+              }}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition shrink-0 cursor-pointer"
               title="Close"
               aria-label="Close verification details"
             >
               <X className="w-4 h-4" />
-            </button>
+            </span>
           </div>
 
           {/* Explanation Body */}

@@ -13,7 +13,8 @@ import {
   SmsConfig,
   VerificationCategory,
   VerificationStatus,
-  UserRole
+  UserRole,
+  QrAuthSession
 } from '../src/types/index.js';
 import { DbUser, StoredOtp, ServerState } from './types.js';
 
@@ -36,6 +37,7 @@ class Database {
       reports: new Map(),
       auditLogs: [],
       otps: new Map(),
+      qrSessions: new Map(),
       branding: {
         appName: 'Aether Messenger',
         appShortName: 'Aether',
@@ -574,6 +576,82 @@ class Database {
       }
     }
     return list;
+  }
+
+  // --- QR Web Auth Sessions ---
+  public createQrSession(userAgent = 'Web Browser', ip = '127.0.0.1'): QrAuthSession {
+    const sessionId = `qr_sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const token = `qr_tok_${Math.random().toString(36).substring(2, 10)}_${Date.now().toString(36)}`;
+    const randCode = Math.floor(1000 + Math.random() * 9000).toString();
+    const linkCode = `AE-${randCode}`;
+    const now = Date.now();
+    const qrSession: QrAuthSession = {
+      sessionId,
+      token,
+      linkCode,
+      status: 'pending',
+      userAgent,
+      ipAddress: ip,
+      createdAt: now,
+      expiresAt: now + 120 * 1000, // 120 seconds
+    };
+    this.state.qrSessions.set(sessionId, qrSession);
+    return qrSession;
+  }
+
+  public getQrSession(sessionId: string): QrAuthSession | undefined {
+    const s = this.state.qrSessions.get(sessionId);
+    if (!s) return undefined;
+    if (s.status === 'pending' && Date.now() > s.expiresAt) {
+      s.status = 'expired';
+    }
+    return s;
+  }
+
+  public getQrSessionByLinkCode(linkCode: string): QrAuthSession | undefined {
+    const clean = linkCode.trim().toUpperCase();
+    for (const s of this.state.qrSessions.values()) {
+      if (s.linkCode === clean || s.linkCode === `AE-${clean.replace(/^AE-?/, '')}`) {
+        if (s.status === 'pending' && Date.now() > s.expiresAt) {
+          s.status = 'expired';
+        }
+        return s;
+      }
+    }
+    return undefined;
+  }
+
+  public authorizeQrSession(
+    sessionId: string,
+    token: string,
+    userId: string
+  ): { success: boolean; session?: UserSession; user?: UserProfile; error?: string } {
+    const qr = this.getQrSession(sessionId);
+    if (!qr) return { success: false, error: 'QR session not found or expired.' };
+    if (qr.status === 'expired' || Date.now() > qr.expiresAt) {
+      return { success: false, error: 'QR code expired. Please scan the refreshed code.' };
+    }
+    if (qr.token !== token) {
+      return { success: false, error: 'Invalid security token for this QR session.' };
+    }
+    const user = this.getUserById(userId);
+    if (!user) return { success: false, error: 'User not found.' };
+
+    const newSession = this.createSession(userId, `Aether Web Client (${qr.userAgent || 'Desktop'})`, qr.ipAddress);
+    qr.status = 'authorized';
+    qr.userId = userId;
+    qr.userSessionId = newSession.id;
+
+    this.addAuditLog(user.id, user.displayName, 'QR_WEB_SESSION_LINKED', 'session', newSession.id, {
+      browser: newSession.browser,
+      os: newSession.os,
+    });
+
+    return {
+      success: true,
+      session: newSession,
+      user: this.toPublicProfile(user),
+    };
   }
 
   // --- OTP Verification ---

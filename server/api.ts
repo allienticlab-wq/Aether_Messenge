@@ -4,6 +4,7 @@ import { db } from './db.js';
 import { wsManager } from './websocket.js';
 import { renderEmailTemplate } from './email-templates.js';
 import { SmsProviderService } from './sms-service.js';
+import { messageCentralService } from './message-central.js';
 import {
   Message,
   Attachment,
@@ -187,44 +188,71 @@ apiRouter.post('/auth/register', (req: Request, res: Response) => {
   });
 });
 
-// Phone Authentication: Request OTP (WhatsApp-style onboarding)
+// Phone Authentication: Request OTP via MessageCentral VerifyNow (India & International)
 apiRouter.post('/auth/phone/request-otp', async (req: Request, res: Response) => {
-  const { phone } = req.body;
+  const { phone, countryCode, flowType } = req.body;
   if (!phone || typeof phone !== 'string' || phone.trim().length < 6) {
     return res.status(400).json({ error: 'Valid phone number is required.' });
   }
 
   const cleanPhone = phone.trim();
+  const cCode = (countryCode || '91').toString().replace(/\D/g, '') || '91';
+  const flow = flowType || 'SMS';
+
+  // Create internal OTP backup
   const otp = db.createOtp(cleanPhone, 'phone_verify');
 
-  // Trigger SMS service
-  const smsResult = await smsService.sendOtp(cleanPhone, otp.code, db.state.branding.appShortName);
+  // Trigger MessageCentral VerifyNow CPaaS
+  const mcResult = await messageCentralService.sendOtp(cleanPhone, cCode, flow);
+
+  // Also log to outbox
   db.state.outboxSms.unshift({
-    id: smsResult.messageId,
-    to: cleanPhone,
-    body: `Your ${db.state.branding.appShortName} verification code is: ${otp.code}`,
+    id: mcResult.verificationId,
+    to: `+${cCode} ${cleanPhone}`,
+    body: `[MessageCentral VerifyNow] Verification OTP for ${db.state.branding.appShortName}: ${mcResult.previewCode || otp.code}`,
     status: 'delivered',
     sentAt: new Date().toISOString(),
   });
 
   res.json({
     success: true,
-    message: `Verification code sent to ${cleanPhone}.`,
-    previewCode: otp.code,
+    message: mcResult.message || `Verification code sent to +${cCode} ${cleanPhone} via MessageCentral VerifyNow.`,
+    verificationId: mcResult.verificationId,
+    previewCode: mcResult.previewCode || otp.code,
+    flowType: mcResult.flowType,
+    provider: mcResult.provider,
   });
 });
 
-// Phone Authentication: Verify OTP & Profile Setup
-apiRouter.post('/auth/phone/verify-otp', (req: Request, res: Response) => {
-  const { phone, code, displayName, avatarUrl } = req.body;
+// Phone Authentication: Verify OTP & Profile Setup via MessageCentral VerifyNow
+apiRouter.post('/auth/phone/verify-otp', async (req: Request, res: Response) => {
+  const { phone, code, verificationId, countryCode, displayName, avatarUrl } = req.body;
   if (!phone || !code) {
     return res.status(400).json({ error: 'Phone number and verification code are required.' });
   }
 
   const cleanPhone = phone.trim();
-  const result = db.verifyOtp(cleanPhone, code.trim(), 'phone_verify');
-  if (!result.success) {
-    return res.status(400).json({ error: result.error || 'Invalid or expired verification code.' });
+  const cCode = (countryCode || '91').toString().replace(/\D/g, '') || '91';
+
+  // 1. Verify with MessageCentral VerifyNow if verificationId provided
+  let isVerified = false;
+  if (verificationId) {
+    const mcValidate = await messageCentralService.validateOtp(verificationId, code.trim(), cleanPhone, cCode);
+    if (mcValidate.success) {
+      isVerified = true;
+    }
+  }
+
+  // 2. Fallback to local stored OTP if not verified via MessageCentral
+  if (!isVerified) {
+    const localResult = db.verifyOtp(cleanPhone, code.trim(), 'phone_verify');
+    if (localResult.success) {
+      isVerified = true;
+    }
+  }
+
+  if (!isVerified) {
+    return res.status(400).json({ error: 'Invalid or expired verification code.' });
   }
 
   let user = db.getUserByPhone(cleanPhone);
@@ -253,7 +281,7 @@ apiRouter.post('/auth/phone/verify-otp', (req: Request, res: Response) => {
       username: candidateUsername,
       displayName: (displayName && displayName.trim()) || `User ${cleanPhone.slice(-4)}`,
       phone: cleanPhone,
-      password: `phone_auth_${Date.now()}`,
+      password: `mc_phone_auth_${Date.now()}`,
     });
     user.phoneVerified = true;
     if (avatarUrl) {
@@ -263,8 +291,9 @@ apiRouter.post('/auth/phone/verify-otp', (req: Request, res: Response) => {
 
   const session = db.createSession(user.id, req.headers['user-agent'], req.ip);
 
-  db.addAuditLog(user.id, user.displayName, isNewUser ? 'USER_REGISTER_PHONE' : 'USER_LOGIN_PHONE', 'user', user.id, {
+  db.addAuditLog(user.id, user.displayName, isNewUser ? 'USER_REGISTER_PHONE_MC' : 'USER_LOGIN_PHONE_MC', 'user', user.id, {
     phone: cleanPhone,
+    provider: 'message_central_verifynow',
   });
 
   res.json({
@@ -273,6 +302,144 @@ apiRouter.post('/auth/phone/verify-otp', (req: Request, res: Response) => {
     session,
     isNewUser,
   });
+});
+
+// ==============================================================================
+// QR AUTHENTICATION ENDPOINTS (WhatsApp Web / Telegram Web style login)
+// ==============================================================================
+
+// Generate new QR Session for Web Browser (web.aether.xperiserv.in)
+apiRouter.post('/auth/qr/generate', (req: Request, res: Response) => {
+  const userAgent = req.headers['user-agent'] || 'Web Browser';
+  const ip = req.ip || '127.0.0.1';
+  const qrSession = db.createQrSession(userAgent, ip);
+
+  res.json({
+    success: true,
+    sessionId: qrSession.sessionId,
+    token: qrSession.token,
+    linkCode: qrSession.linkCode,
+    expiresAt: qrSession.expiresAt,
+    qrPayload: JSON.stringify({
+      app: 'AETHER_MESSENGER',
+      sessionId: qrSession.sessionId,
+      token: qrSession.token,
+      linkCode: qrSession.linkCode,
+      ts: Date.now(),
+    }),
+  });
+});
+
+// Poll status of QR Session (called by web client every ~1.5s)
+apiRouter.get('/auth/qr/status/:sessionId', (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const qr = db.getQrSession(sessionId);
+
+  if (!qr) {
+    return res.status(404).json({ status: 'not_found', error: 'QR session does not exist or has been destroyed.' });
+  }
+
+  if (qr.status === 'expired' || Date.now() > qr.expiresAt) {
+    return res.json({ status: 'expired', error: 'QR code expired. Click to reload.' });
+  }
+
+  if (qr.status === 'pending') {
+    return res.json({
+      status: 'pending',
+      sessionId: qr.sessionId,
+      linkCode: qr.linkCode,
+      expiresAt: qr.expiresAt,
+      remainingSeconds: Math.max(0, Math.round((qr.expiresAt - Date.now()) / 1000)),
+    });
+  }
+
+  if (qr.status === 'authorized' && qr.userId && qr.userSessionId) {
+    const user = db.getUserById(qr.userId);
+    const session = db.state.sessions.get(qr.userSessionId);
+
+    if (!user || !session) {
+      return res.status(500).json({ status: 'error', error: 'Authorized session record not found.' });
+    }
+
+    return res.json({
+      status: 'authorized',
+      user: db.toPublicProfile(user),
+      session,
+    });
+  }
+
+  res.json({ status: qr.status });
+});
+
+// Mobile scanner authorizes the QR session using camera scan
+apiRouter.post('/auth/qr/authorize', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { sessionId, token } = req.body;
+
+  if (!sessionId || !token) {
+    return res.status(400).json({ error: 'Session ID and security token are required.' });
+  }
+
+  const result = db.authorizeQrSession(sessionId, token, user.id);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({
+    success: true,
+    message: 'Web browser session successfully authorized and linked!',
+    user: result.user,
+    session: result.session,
+  });
+});
+
+// Mobile app authorizes using the 6-character short code (e.g. AE-8492)
+apiRouter.post('/auth/qr/link-code', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { linkCode } = req.body;
+
+  if (!linkCode || typeof linkCode !== 'string') {
+    return res.status(400).json({ error: 'Valid 6-character link code is required.' });
+  }
+
+  const qr = db.getQrSessionByLinkCode(linkCode);
+  if (!qr) {
+    return res.status(404).json({ error: 'Code not recognized or expired. Please check screen and retype.' });
+  }
+
+  const result = db.authorizeQrSession(qr.sessionId, qr.token, user.id);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  res.json({
+    success: true,
+    message: `Web browser linked successfully using code ${qr.linkCode}!`,
+    user: result.user,
+    session: result.session,
+  });
+});
+
+// List all active QR Web Sessions for current user
+apiRouter.get('/auth/qr/active', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const activeList: any[] = [];
+
+  for (const s of db.state.qrSessions.values()) {
+    if (s.userId === user.id && s.status === 'authorized') {
+      const sess = s.userSessionId ? db.state.sessions.get(s.userSessionId) : null;
+      activeList.push({
+        sessionId: s.sessionId,
+        linkCode: s.linkCode,
+        userAgent: s.userAgent,
+        ipAddress: s.ipAddress,
+        createdAt: s.createdAt,
+        session: sess,
+      });
+    }
+  }
+
+  res.json({ activeSessions: activeList });
 });
 
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
@@ -864,6 +1031,46 @@ apiRouter.post('/chats/:id/messages', requireAuth, (req: Request, res: Response)
   });
 
   res.json({ message: newMessage });
+});
+
+// Mark messages as read in chat
+apiRouter.post('/chats/:id/read', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const chatId = req.params.id;
+  const { messageIds } = req.body || {};
+
+  const chat = db.state.chats.get(chatId);
+  if (!chat || !chat.members.some(m => m.userId === user.id)) {
+    return res.status(403).json({ error: 'Cannot access this chat.' });
+  }
+
+  const now = new Date().toISOString();
+  const updatedIds: string[] = [];
+
+  for (const m of db.state.messages.values()) {
+    if (m.chatId === chatId) {
+      if (Array.isArray(messageIds) && messageIds.length > 0 && !messageIds.includes(m.id)) {
+        continue;
+      }
+      if (m.senderId !== user.id) {
+        m.status = 'read';
+        if (!m.readBy) m.readBy = [];
+        if (!m.readBy.some(r => r.userId === user.id)) {
+          m.readBy.push({ userId: user.id, readAt: now });
+        }
+        updatedIds.push(m.id);
+      }
+    }
+  }
+
+  chat.unreadCount = 0;
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'messages_read',
+    payload: { chatId, userId: user.id, messageIds: updatedIds, readAt: now },
+  });
+
+  res.json({ success: true, updatedCount: updatedIds.length, readAt: now });
 });
 
 // Edit Message
@@ -1950,4 +2157,137 @@ apiRouter.post('/admin/database/restore', requireAuth, requireRole(['super_admin
     return res.status(400).json({ error: result.error });
   }
   res.json({ success: true, message: 'Database state successfully restored in one click.' });
+});
+
+// ==============================================================================
+// 8. MESSAGECENTRAL VERIFYNOW (INDIA OTP VERIFICATION) ADMIN DASHBOARD & UPLOAD
+// ==============================================================================
+
+// Fetch current MessageCentral configuration and logs
+apiRouter.get('/admin/messagecentral', requireAuth, requireRole(['super_admin', 'admin', 'moderator', 'support']), (req: Request, res: Response) => {
+  res.json({
+    config: messageCentralService.getConfig(),
+    logs: messageCentralService.getLogs(),
+  });
+});
+
+// Update MessageCentral credentials & settings
+apiRouter.put('/admin/messagecentral', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const updated = messageCentralService.updateConfig(req.body);
+
+  db.addAuditLog(actor.id, actor.displayName, 'MESSAGECENTRAL_CONFIG_UPDATED', 'config', 'messagecentral', {
+    customerId: updated.customerId,
+    flowType: updated.flowType,
+    isLiveMode: updated.isLiveMode,
+    senderId: updated.senderId,
+  });
+
+  res.json({ success: true, config: updated, message: 'MessageCentral configuration saved successfully.' });
+});
+
+// API / Credential File Upload (JSON, .env, or raw key-value upload)
+apiRouter.post('/admin/messagecentral/upload-config', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const { fileContent, rawJson } = req.body;
+
+  let parsedConfig: any = {};
+
+  try {
+    if (rawJson && typeof rawJson === 'object') {
+      parsedConfig = rawJson;
+    } else if (fileContent && typeof fileContent === 'string') {
+      const trimmed = fileContent.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        parsedConfig = JSON.parse(trimmed);
+      } else {
+        // Parse .env or key=value / CSV lines
+        const lines = trimmed.split('\n');
+        for (const line of lines) {
+          const parts = line.split('=');
+          if (parts.length >= 2) {
+            const key = parts[0].trim().replace(/^export\s+/, '').toUpperCase();
+            const val = parts.slice(1).join('=').trim().replace(/^["']|["']$/g, '');
+            if (key.includes('CUSTOMER_ID') || key === 'CUSTOMERID') parsedConfig.customerId = val;
+            if (key.includes('API_KEY') || key === 'KEY' || key === 'AUTHTOKEN') parsedConfig.apiKey = val;
+            if (key.includes('SENDER') || key === 'SENDERID') parsedConfig.senderId = val;
+            if (key.includes('FLOW') || key === 'FLOWTYPE') parsedConfig.flowType = val;
+            if (key.includes('LIVE') || key === 'IS_LIVE') parsedConfig.isLiveMode = val === 'true' || val === '1';
+            if (key.includes('COUNTRY') || key === 'COUNTRY_CODE') parsedConfig.countryCode = val;
+          }
+        }
+      }
+    }
+
+    // Map extracted fields
+    const newConfig: any = {};
+    if (parsedConfig.customerId || parsedConfig.customer_id || parsedConfig.CUSTOMER_ID) {
+      newConfig.customerId = parsedConfig.customerId || parsedConfig.customer_id || parsedConfig.CUSTOMER_ID;
+    }
+    if (parsedConfig.apiKey || parsedConfig.api_key || parsedConfig.API_KEY || parsedConfig.key) {
+      newConfig.apiKey = parsedConfig.apiKey || parsedConfig.api_key || parsedConfig.API_KEY || parsedConfig.key;
+    }
+    if (parsedConfig.authToken || parsedConfig.auth_token) {
+      newConfig.authToken = parsedConfig.authToken || parsedConfig.auth_token;
+    }
+    if (parsedConfig.senderId || parsedConfig.sender_id || parsedConfig.SENDER_ID) {
+      newConfig.senderId = parsedConfig.senderId || parsedConfig.sender_id || parsedConfig.SENDER_ID;
+    }
+    if (parsedConfig.flowType || parsedConfig.flow_type) {
+      newConfig.flowType = parsedConfig.flowType || parsedConfig.flow_type;
+    }
+    if (parsedConfig.countryCode || parsedConfig.country_code) {
+      newConfig.countryCode = parsedConfig.countryCode || parsedConfig.country_code;
+    }
+    if (parsedConfig.isLiveMode !== undefined) {
+      newConfig.isLiveMode = Boolean(parsedConfig.isLiveMode);
+    }
+
+    const applied = messageCentralService.updateConfig(newConfig);
+
+    db.addAuditLog(actor.id, actor.displayName, 'MESSAGECENTRAL_CONFIG_UPLOADED', 'config', 'messagecentral', {
+      customerId: applied.customerId,
+      senderId: applied.senderId,
+    });
+
+    res.json({
+      success: true,
+      message: 'MessageCentral VerifyNow API credentials successfully uploaded and applied!',
+      config: applied,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: `Failed to parse uploaded credentials file: ${err.message}` });
+  }
+});
+
+// Live CPaaS Auth Token Test directly against MessageCentral
+apiRouter.post('/admin/messagecentral/test-token', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
+  const result = await messageCentralService.getAuthToken();
+  res.json(result);
+});
+
+// Dispatch Live / Sandbox Test OTP via MessageCentral VerifyNow
+apiRouter.post('/admin/messagecentral/test-otp', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
+  const { mobileNumber, countryCode, flowType } = req.body;
+  const target = (mobileNumber || '9876543210').toString().replace(/\D/g, '');
+  const cCode = (countryCode || '91').toString().replace(/\D/g, '') || '91';
+
+  const result = await messageCentralService.sendOtp(target, cCode, flowType);
+  res.json(result);
+});
+
+// Validate Live / Sandbox Test OTP via MessageCentral VerifyNow
+apiRouter.post('/admin/messagecentral/validate-test-otp', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
+  const { verificationId, code, mobileNumber, countryCode } = req.body;
+  if (!code) {
+    return res.status(400).json({ error: 'Verification code is required.' });
+  }
+
+  const result = await messageCentralService.validateOtp(
+    verificationId || '',
+    code.trim(),
+    (mobileNumber || '9876543210').toString().replace(/\D/g, ''),
+    countryCode || '91'
+  );
+  res.json(result);
 });

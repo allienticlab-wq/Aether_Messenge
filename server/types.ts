@@ -9,7 +9,8 @@ import {
   AuditLog,
   WhiteLabelBranding,
   SmtpConfig,
-  SmsConfig
+  SmsConfig,
+  QrAuthSession
 } from '../src/types/index.js';
 
 export interface DbUser extends UserProfile {
@@ -58,6 +59,7 @@ export interface ServerState {
   reports: Map<string, ModerationReport>;
   auditLogs: AuditLog[];
   otps: Map<string, StoredOtp>;
+  qrSessions: Map<string, QrAuthSession>;
   branding: WhiteLabelBranding;
   smtpConfig: SmtpConfig;
   smsConfig: SmsConfig;
