@@ -18,7 +18,8 @@ import {
   Sparkles,
   PhoneCall,
   X,
-  Camera
+  Camera,
+  QrCode
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PWAInstallButton } from '../common/PWAInstallButton.js';
@@ -32,6 +33,7 @@ interface LeftSidebarProps {
   onOpenAdmin: () => void;
   onOpenAuth: () => void;
   onOpenLegal: () => void;
+  onOpenQrScanner?: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -42,6 +44,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenAdmin,
   onOpenAuth,
   onOpenLegal,
+  onOpenQrScanner,
 }) => {
   const { chats, activeChat, setActiveChat, communities } = useChat();
   const { currentUser, logout, updateProfile } = useAuth();
@@ -389,6 +392,17 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               title="Change Profile Photo (Camera & Studio)"
             >
               <Camera className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Link Desktop / Scan QR Code Button */}
+          {currentUser && onOpenQrScanner && (
+            <button
+              onClick={onOpenQrScanner}
+              className="p-2 text-slate-400 hover:text-cyan-300 rounded-xl hover:bg-slate-900 transition"
+              title="Scan QR Code to Login on PC/Laptop (Web Pairing)"
+            >
+              <QrCode className="w-4 h-4 text-cyan-400" />
             </button>
           )}
 

@@ -26,9 +26,15 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenVerificationModal: () => void;
+  onOpenQrScanner?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onOpenVerificationModal }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  onOpenVerificationModal,
+  onOpenQrScanner,
+}) => {
   const { currentUser, updateProfile, updatePrivacy, refreshUser } = useAuth();
   const { branding, theme, setTheme, accentColor, setAccentColor } = useBranding();
 
@@ -739,8 +745,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
 
           {/* 4. SESSIONS & DEVICES */}
           {activeTab === 'sessions' && (
-            <div className="space-y-3">
-              <div className="font-semibold text-slate-200">Authorized Sessions & Devices</div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-slate-200">Authorized Sessions & Devices</div>
+                  <div className="text-[11px] text-slate-400">Desktop and mobile apps signed in to your account.</div>
+                </div>
+
+                {onOpenQrScanner && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenQrScanner();
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Link a Device (Scan QR)</span>
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-2">
                 {sessions.map((s) => (
                   <div

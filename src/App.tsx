@@ -17,6 +17,7 @@ import { SettingsModal } from './components/modals/SettingsModal.js';
 import { AdminDashboard } from './components/admin/AdminDashboard.js';
 import { AdminLoginGate } from './components/admin/AdminLoginGate.js';
 import { WebQrLoginView } from './components/web/WebQrLoginView.js';
+import { QrScannerModal } from './components/modals/QrScannerModal.js';
 import { ReportModal } from './components/modals/ReportModal.js';
 import { LegalModal } from './components/modals/LegalModal.js';
 import { MobileNavBar } from './components/mobile/MobileNavBar.js';
@@ -107,6 +108,7 @@ function MessengerApp() {
   const [newCommunityModalOpen, setNewCommunityModalOpen] = useState(false);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [qrScannerModalOpen, setQrScannerModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
 
@@ -363,6 +365,7 @@ function MessengerApp() {
                 onOpenAdmin={() => setViewMode('admin')}
                 onOpenAuth={() => setAuthModalOpen(true)}
                 onOpenLegal={() => setLegalModalOpen(true)}
+                onOpenQrScanner={() => setQrScannerModalOpen(true)}
               />
             </div>
 
@@ -540,6 +543,7 @@ function MessengerApp() {
               setNewChatModalOpen(true);
             }
           }}
+          onOpenQrScanner={() => setQrScannerModalOpen(true)}
           unreadCount={totalUnread}
         />
       )}
@@ -549,6 +553,10 @@ function MessengerApp() {
 
       {/* ALL MODALS */}
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      <QrScannerModal
+        isOpen={qrScannerModalOpen}
+        onClose={() => setQrScannerModalOpen(false)}
+      />
       <NewChatModal
         isOpen={newChatModalOpen}
         onClose={() => setNewChatModalOpen(false)}
@@ -564,6 +572,7 @@ function MessengerApp() {
         isOpen={settingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
         onOpenVerificationModal={() => setVerificationModalOpen(true)}
+        onOpenQrScanner={() => setQrScannerModalOpen(true)}
       />
       <ReportModal isOpen={reportModalOpen} onClose={() => setReportModalOpen(false)} />
       <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} />

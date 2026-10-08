@@ -401,12 +401,31 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser?.id]);
 
-  // Background Dual-Engine Polling: Sync active conversation every 1.2 seconds
-  // Ensures 100% real-time reliability even if WebSocket disconnects or drops in iframe
+  // Background Dual-Engine Polling: Sync active conversation & chat list every 1.5 seconds
+  // Ensures 100% real-time reliability even if WebSocket disconnects or drops on mobile sleep/iframe
   useEffect(() => {
     if (!currentUser) return;
 
     const interval = setInterval(async () => {
+      // 1. Sync chat list & unread counts
+      try {
+        const chatsRes = await fetch('/api/chats', { headers: { 'x-user-id': currentUser.id } });
+        if (chatsRes.ok) {
+          const chatsData = await chatsRes.json();
+          if (chatsData.chats) {
+            setChats((prev) => {
+              const prevStr = JSON.stringify(prev.map(c => ({ id: c.id, unread: c.unreadCount, last: c.lastMessage?.id, text: c.lastMessage?.text })));
+              const nextStr = JSON.stringify(chatsData.chats.map((c: any) => ({ id: c.id, unread: c.unreadCount, last: c.lastMessage?.id, text: c.lastMessage?.text })));
+              if (prevStr !== nextStr) {
+                return chatsData.chats;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {}
+
+      // 2. Sync active chat messages stream
       const currentActive = activeChatRef.current;
       if (!currentActive) return;
 
@@ -441,7 +460,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // Silently skip background poll error
       }
-    }, 1200);
+    }, 1500);
 
     return () => clearInterval(interval);
   }, [currentUser?.id]);
