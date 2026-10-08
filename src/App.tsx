@@ -15,6 +15,8 @@ import { NewCommunityModal } from './components/modals/NewCommunityModal.js';
 import { VerificationModal } from './components/modals/VerificationModal.js';
 import { SettingsModal } from './components/modals/SettingsModal.js';
 import { AdminDashboard } from './components/admin/AdminDashboard.js';
+import { AdminLoginGate } from './components/admin/AdminLoginGate.js';
+import { WebQrLoginView } from './components/web/WebQrLoginView.js';
 import { ReportModal } from './components/modals/ReportModal.js';
 import { LegalModal } from './components/modals/LegalModal.js';
 import { MobileNavBar } from './components/mobile/MobileNavBar.js';
@@ -55,13 +57,19 @@ function MessengerApp() {
     isWsConnected,
   } = useChat();
 
-  // Top-level View Mode: 'messenger' | 'admin' | 'split'
-  const [viewMode, setViewMode] = useState<'messenger' | 'admin' | 'split'>(() => {
+  // Dedicated route detection:
+  // 1. Web QR Gateway: /web or ?portal=web or web. subdomain
+  // 2. Admin Operations Gateway: /admin or ?portal=admin or admin. subdomain
+  // 3. Messenger (default): /
+  const [route, setRoute] = useState<'messenger' | 'web' | 'admin'>(() => {
     try {
       if (typeof window !== 'undefined') {
         const hostname = window.location.hostname.toLowerCase();
         const pathname = window.location.pathname.toLowerCase();
         const searchPortal = new URLSearchParams(window.location.search).get('portal');
+        if (hostname.startsWith('web.') || pathname.startsWith('/web') || searchPortal === 'web') {
+          return 'web';
+        }
         if (hostname.startsWith('admin.') || pathname.startsWith('/admin') || searchPortal === 'admin') {
           return 'admin';
         }
@@ -69,6 +77,29 @@ function MessengerApp() {
     } catch {}
     return 'messenger';
   });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const hostname = window.location.hostname.toLowerCase();
+        const pathname = window.location.pathname.toLowerCase();
+        const searchPortal = new URLSearchParams(window.location.search).get('portal');
+        if (hostname.startsWith('web.') || pathname.startsWith('/web') || searchPortal === 'web') {
+          setRoute('web');
+        } else if (hostname.startsWith('admin.') || pathname.startsWith('/admin') || searchPortal === 'admin') {
+          setRoute('admin');
+        } else {
+          setRoute('messenger');
+        }
+      } catch {}
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Top-level View Mode within Messenger: 'messenger' | 'admin' | 'split'
+  const [viewMode, setViewMode] = useState<'messenger' | 'admin' | 'split'>('messenger');
 
   // Modals state
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -128,10 +159,51 @@ function MessengerApp() {
 
   // Prompt login only if user is definitely missing and finished loading
   useEffect(() => {
-    if (!isLoading && !currentUser) {
+    if (!isLoading && !currentUser && route === 'messenger') {
       setAuthModalOpen(true);
     }
-  }, [isLoading, currentUser]);
+  }, [isLoading, currentUser, route]);
+
+  // 1. Dedicated Web QR Pairing Portal (/web, ?portal=web, web.aether.*)
+  if (route === 'web') {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-[#060910]">
+        <WebQrLoginView
+          onOpenMobileLogin={() => setAuthModalOpen(true)}
+        />
+        <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      </div>
+    );
+  }
+
+  // 2. Dedicated Admin Operations Portal (/admin, ?portal=admin, admin.aether.*)
+  if (route === 'admin') {
+    if (isAdminRole) {
+      return (
+        <div className="h-screen w-screen overflow-hidden bg-[#090d16] flex flex-col">
+          <AdminDashboard
+            isOpen={true}
+            isEmbedded={false}
+            onClose={() => {
+              setRoute('messenger');
+              try { window.history.pushState({}, '', '/'); } catch {}
+            }}
+          />
+        </div>
+      );
+    }
+    return (
+      <AdminLoginGate
+        onBackToMessenger={() => {
+          setRoute('messenger');
+          try { window.history.pushState({}, '', '/'); } catch {}
+        }}
+        onSuccess={() => {
+          setRoute('admin');
+        }}
+      />
+    );
+  }
 
   return (
     <div

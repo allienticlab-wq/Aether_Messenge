@@ -156,17 +156,10 @@ export const WebQrLoginView: React.FC<WebQrLoginViewProps> = ({ onOpenMobileLogi
         <div className="flex items-center gap-3 text-xs">
           <a
             href="/"
-            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center gap-1.5"
+            className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition flex items-center gap-1.5 shadow"
           >
-            <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden sm:inline">Mobile App</span>
-          </a>
-          <a
-            href="/admin"
-            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center gap-1.5"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">Admin Portal</span>
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Open Messenger</span>
           </a>
         </div>
       </header>

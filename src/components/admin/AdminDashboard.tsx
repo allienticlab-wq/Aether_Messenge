@@ -83,7 +83,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onClose,
   isEmbedded = false,
 }) => {
-  const { currentUser, switchDemoUser } = useAuth();
+  const { currentUser } = useAuth();
   const { branding, updateBranding } = useBranding();
 
   const [activeTab, setActiveTab] = useState<
@@ -349,13 +349,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     a.click();
     URL.revokeObjectURL(url);
     setActionMessage(`Exported ${userList.length} user records to JSON archive.`);
-  };
-
-  const handleSwitchUser = async (userId: string, username: string) => {
-    if (confirm(`Switch and login as @${username}? Your active admin session will be swapped to this account for testing.`)) {
-      await switchDemoUser(userId);
-      if (onClose) onClose();
-    }
   };
 
   const handleDeleteUserAccount = async (userId: string, username: string) => {
@@ -1287,14 +1280,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 >
                                   <Edit3 className="w-3 h-3 text-cyan-400" />
                                   <span>Edit Info</span>
-                                </button>
-                                <button
-                                  onClick={() => handleSwitchUser(u.id, u.username)}
-                                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1 transition"
-                                  title="Login as this user (Impersonation test)"
-                                >
-                                  <LogIn className="w-3 h-3 text-cyan-400" />
-                                  <span>Login As</span>
                                 </button>
                                 {u.isBanned ? (
                                   <button
@@ -3352,15 +3337,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <KeyRound className="w-3.5 h-3.5 text-amber-400" />
                     <span>Revoke All Active Sessions</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchUser(editUserModal.id, editUserForm.username)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1.5 transition font-medium"
-                  >
-                    <LogIn className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Login / Impersonate as User</span>
                   </button>
 
                   <button

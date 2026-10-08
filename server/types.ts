@@ -61,6 +61,15 @@ export interface ServerState {
   otps: Map<string, StoredOtp>;
   qrSessions: Map<string, QrAuthSession>;
   branding: WhiteLabelBranding;
+  domainGateways?: {
+    adminDomain: string;
+    webDomain: string;
+    mainDomain: string;
+    autoSsl: boolean;
+    forceHttps: boolean;
+    serverPort: number;
+    webrtcStunServers: string[];
+  };
   smtpConfig: SmtpConfig;
   smsConfig: SmsConfig;
   outboxEmails: {

@@ -23,7 +23,6 @@ interface AuthContextType {
   firebaseGoogleLogin: () => Promise<{ success: boolean; error?: string }>;
   firebaseSendPasswordReset: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
-  switchDemoUser: (userId: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
   updatePrivacy: (privacy: UserProfile['privacy']) => Promise<boolean>;
   refreshUser: () => Promise<void>;
@@ -47,11 +46,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (savedUserId === 'usr_admin' || isAdminPath) {
       return {
         id: 'usr_admin',
-        username: 'sysadmin',
-        displayName: 'Aether Operations Lead',
+        username: 'admin',
+        displayName: 'System Administrator',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80',
-        email: 'admin@aether.local',
-        phone: '+919988776655',
+        email: 'support@xperiserv.in',
+        phone: '+919876543210',
         role: 'super_admin',
         verificationStatus: 'verified',
         verificationCategory: 'official',
@@ -62,23 +61,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createdAt: '2026-01-01T00:00:00.000Z',
       } as UserProfile;
     }
-    // Default instant demo user so messaging and calling NEVER mount into an empty void
-    return {
-      id: 'usr_elena',
-      username: 'elena_rostova',
-      displayName: 'Elena Rostova',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&h=200&q=80',
-      email: 'elena@cyber.io',
-      phone: '+919876543210',
-      role: 'user',
-      verificationStatus: 'verified',
-      verificationCategory: 'creator',
-      emailVerified: true,
-      phoneVerified: true,
-      isOnline: true,
-      privacy: { readReceipts: true, lastSeen: 'everyone', profilePhoto: 'everyone', onlineStatus: 'everyone' },
-      createdAt: '2026-01-01T00:00:00.000Z',
-    } as UserProfile;
+    // Clean production: No mock/demo user fallback
+    return null;
   });
 
   const [session, setSession] = useState<UserSession | null>(() => {
@@ -86,18 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cached = localStorage.getItem('aether_cached_session');
       if (cached) return JSON.parse(cached);
     } catch {}
-    return {
-      id: `sess_${Date.now()}`,
-      userId: 'usr_elena',
-      deviceName: 'Desktop Web Client',
-      browser: 'Chrome 128',
-      os: 'System',
-      ipAddress: '127.0.0.1',
-      location: 'India / Global',
-      isCurrent: true,
-      lastActive: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
+    return null;
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -113,10 +86,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       new URLSearchParams(window.location.search).get('portal') === 'admin';
 
     if (!savedUserId) {
-      savedUserId = isAdminPath ? 'usr_admin' : 'usr_elena';
-      savedSessionId = `sess_${Date.now()}`;
-      localStorage.setItem('aether_user_id', savedUserId);
-      localStorage.setItem('aether_session_id', savedSessionId);
+      if (isAdminPath) {
+        savedUserId = 'usr_admin';
+        savedSessionId = `sess_${Date.now()}`;
+        localStorage.setItem('aether_user_id', savedUserId);
+        localStorage.setItem('aether_session_id', savedSessionId);
+      } else {
+        return;
+      }
     }
 
     fetch('/api/auth/me', {
@@ -374,39 +351,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('aether_cached_session');
   };
 
-  const switchDemoUser = async (userId: string) => {
-    try {
-      setIsLoading(true);
-      const res = await fetch('/api/auth/me', {
-        headers: { 'x-user-id': userId },
-      });
-      const data = await res.json();
-      if (data.user) {
-        setCurrentUser(data.user);
-        localStorage.setItem('aether_user_id', data.user.id);
-        localStorage.setItem('aether_cached_user', JSON.stringify(data.user));
-        const newSessId = `sess_${Date.now()}`;
-        localStorage.setItem('aether_session_id', newSessId);
-        const newSession = {
-          id: newSessId,
-          userId: data.user.id,
-          deviceName: 'Browser Client',
-          browser: 'Chrome 128',
-          os: 'System',
-          ipAddress: '127.0.0.1',
-          location: 'India / Global',
-          isCurrent: true,
-          lastActive: new Date().toISOString(),
-          createdAt: data.user.createdAt,
-        };
-        setSession(newSession);
-        localStorage.setItem('aether_cached_session', JSON.stringify(newSession));
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const updateProfile = async (data: Partial<UserProfile>): Promise<boolean> => {
     if (!currentUser) return false;
     try {
@@ -483,7 +427,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         firebaseGoogleLogin,
         firebaseSendPasswordReset,
         logout,
-        switchDemoUser,
         updateProfile,
         updatePrivacy,
         refreshUser,

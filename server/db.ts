@@ -58,6 +58,19 @@ class Database {
         termsUrl: '/terms',
         cookiesUrl: '/cookies',
       },
+      domainGateways: {
+        adminDomain: 'admin.aether.xperiserv.in',
+        webDomain: 'web.aether.xperiserv.in',
+        mainDomain: 'aether.xperiserv.in',
+        autoSsl: true,
+        forceHttps: true,
+        serverPort: 3000,
+        webrtcStunServers: [
+          'stun:stun.l.google.com:19302',
+          'stun:stun1.l.google.com:19302',
+          'stun:stun2.l.google.com:19302',
+        ],
+      },
       smtpConfig: {
         host: 'smtp.sendgrid.net',
         port: 587,
@@ -93,23 +106,13 @@ class Database {
       callsHistory: [
         {
           id: 'call_seed_1',
-          chatId: 'chat_direct_elena',
-          initiatorId: 'usr_elena',
-          initiatorName: 'Dr. Elena Rostova',
-          type: 'video',
-          durationSeconds: 342,
-          status: 'completed',
-          createdAt: new Date(Date.now() - 3600 * 1000 * 5).toISOString(),
-        },
-        {
-          id: 'call_seed_2',
-          chatId: 'chat_direct_elena',
+          chatId: 'chat_announcements',
           initiatorId: 'usr_admin',
           initiatorName: 'System Administrator',
           type: 'voice',
-          durationSeconds: 128,
+          durationSeconds: 120,
           status: 'completed',
-          createdAt: new Date(Date.now() - 3600 * 1000 * 12).toISOString(),
+          createdAt: new Date(Date.now() - 3600 * 1000 * 6).toISOString(),
         },
       ],
       notificationsHistory: [
@@ -130,7 +133,7 @@ class Database {
   private seedInitialData() {
     const now = new Date().toISOString();
 
-    // 1. Production Super Administrator
+    // 1. Production Super Administrator (Sole seeded system authority)
     const adminUser: DbUser = {
       id: 'usr_admin',
       email: 'support@xperiserv.in',
@@ -168,120 +171,6 @@ class Database {
     };
     this.state.users.set(adminUser.id, adminUser);
 
-    // 2. Verified Creator: Aria Vance (@ariavance)
-    const ariaUser: DbUser = {
-      id: 'usr_aria',
-      email: 'aria@creator.aether.internal',
-      phone: '+14155552671',
-      username: 'ariavance',
-      displayName: 'Aria Vance',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&h=200&q=80',
-      about: 'Digital artist & UI/3D creator. Sharing shaders, interactive prototypes & spatial design.',
-      customStatus: 'Creating new tutorials 🎨',
-      role: 'user',
-      isOnline: true,
-      lastSeen: now,
-      emailVerified: true,
-      phoneVerified: true,
-      mfaEnabled: false,
-      passkeyCount: 0,
-      verificationStatus: 'verified',
-      verificationCategory: 'creator',
-      verificationReason: 'Verified Digital Creator & Key Platform Contributor',
-      verifiedAt: now,
-      passwordHash: hashPassword('CreatorPass2026!'),
-      isSuspended: false,
-      isBanned: false,
-      createdAt: now,
-      privacy: {
-        lastSeen: 'everyone',
-        onlineStatus: 'everyone',
-        profilePhoto: 'everyone',
-        about: 'everyone',
-        readReceipts: true,
-        typingIndicators: true,
-        callPermissions: 'everyone',
-        allowGroupInvites: 'everyone',
-      },
-    };
-    this.state.users.set(ariaUser.id, ariaUser);
-
-    // 3. Verified Business: Apex Robotics Corp (@apexrobotics)
-    const apexUser: DbUser = {
-      id: 'usr_apex',
-      email: 'care@apexrobotics.internal',
-      phone: '+18005553920',
-      username: 'apexrobotics',
-      displayName: 'Apex Robotics',
-      avatarUrl: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=200&h=200&q=80',
-      about: 'Commercial automated robotics & hardware solutions. Verified merchant and enterprise account.',
-      customStatus: 'Support desk open 9am - 8pm EST',
-      role: 'user',
-      isOnline: true,
-      lastSeen: now,
-      emailVerified: true,
-      phoneVerified: true,
-      mfaEnabled: false,
-      passkeyCount: 0,
-      verificationStatus: 'verified',
-      verificationCategory: 'business',
-      verificationReason: 'Verified Commercial Business & Registered Merchant Account',
-      verifiedAt: now,
-      passwordHash: hashPassword('BusinessPass2026!'),
-      isSuspended: false,
-      isBanned: false,
-      createdAt: now,
-      privacy: {
-        lastSeen: 'everyone',
-        onlineStatus: 'everyone',
-        profilePhoto: 'everyone',
-        about: 'everyone',
-        readReceipts: true,
-        typingIndicators: true,
-        callPermissions: 'everyone',
-        allowGroupInvites: 'everyone',
-      },
-    };
-    this.state.users.set(apexUser.id, apexUser);
-
-    // 4. Official Support: Aether Support (@support)
-    const supportUser: DbUser = {
-      id: 'usr_support',
-      email: 'support@xperiserv.in',
-      phone: '+18005550199',
-      username: 'support',
-      displayName: 'Aether Support',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&h=200&q=80',
-      about: 'Official 24/7 Platform Customer Care & Security Assistance.',
-      customStatus: 'Always here to assist you ⚡',
-      role: 'support',
-      isOnline: true,
-      lastSeen: now,
-      emailVerified: true,
-      phoneVerified: true,
-      mfaEnabled: false,
-      passkeyCount: 0,
-      verificationStatus: 'verified',
-      verificationCategory: 'support',
-      verificationReason: 'Official Platform Customer Support & Safety Representative',
-      verifiedAt: now,
-      passwordHash: hashPassword('SupportPass2026!'),
-      isSuspended: false,
-      isBanned: false,
-      createdAt: now,
-      privacy: {
-        lastSeen: 'everyone',
-        onlineStatus: 'everyone',
-        profilePhoto: 'everyone',
-        about: 'everyone',
-        readReceipts: true,
-        typingIndicators: true,
-        callPermissions: 'everyone',
-        allowGroupInvites: 'everyone',
-      },
-    };
-    this.state.users.set(supportUser.id, supportUser);
-
     // Official Umbrella Community
     const community: Community = {
       id: 'comm_global',
@@ -291,7 +180,7 @@ class Database {
       bannerUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&h=300&q=80',
       ownerId: adminUser.id,
       channelIds: ['chat_announcements'],
-      memberCount: 4,
+      memberCount: 1,
       inviteCode: 'AETHER-GLOBAL',
       createdAt: now,
     };
@@ -311,9 +200,6 @@ class Database {
       updatedAt: now,
       members: [
         { userId: adminUser.id, role: 'owner', joinedAt: now },
-        { userId: ariaUser.id, role: 'member', joinedAt: now },
-        { userId: apexUser.id, role: 'member', joinedAt: now },
-        { userId: supportUser.id, role: 'member', joinedAt: now },
       ],
     };
     this.state.chats.set(announcementsChat.id, announcementsChat);
@@ -323,7 +209,7 @@ class Database {
       id: 'msg_ann_1',
       chatId: announcementsChat.id,
       senderId: adminUser.id,
-      text: '🚀 Welcome to Aether Messenger. Real-time communication, WebRTC calling, official verified identity marks (Verified Creator, Business, and Support), and audited moderation are fully operational.',
+      text: '🚀 Welcome to Aether Messenger. Real-time communication, WebRTC calling, official verified identity marks, and audited operations are active.',
       reactions: [
         { emoji: '⚡', userIds: [adminUser.id], count: 1 },
       ],
@@ -425,75 +311,10 @@ class Database {
     if (!user) return;
     const now = new Date().toISOString();
 
-    // 1. Ensure user is in announcements channel
+    // Ensure user is added as a member in the official broadcast channel
     const annChat = this.state.chats.get('chat_announcements');
     if (annChat && !annChat.members.some(m => m.userId === userId)) {
       annChat.members.push({ userId, role: 'member', joinedAt: now });
-    }
-
-    // Default verified contact partners to seed chats with:
-    const defaultPartners: Array<{ id: string; defaultMsg: string }> = [
-      {
-        id: 'usr_aria',
-        defaultMsg: 'Hey there! Welcome to Aether ✨ I am Aria Vance, verified creator. Feel free to reach out if you want to collaborate on creative spatial projects!',
-      },
-      {
-        id: 'usr_apex',
-        defaultMsg: 'Hello! Welcome to Apex Robotics customer channel. We are a verified commercial partner on Aether. How may our enterprise team assist you today?',
-      },
-      {
-        id: 'usr_support',
-        defaultMsg: 'Welcome to Aether! This is official platform support. Our verified helpdesk team is on standby 24/7 for account safety, badges, and technical questions.',
-      },
-    ];
-
-    for (const partner of defaultPartners) {
-      if (partner.id === userId) continue;
-      const partnerUser = this.state.users.get(partner.id);
-      if (!partnerUser) continue;
-
-      // Check if direct chat already exists
-      let existingChat: Chat | undefined;
-      for (const c of this.state.chats.values()) {
-        if (
-          c.type === 'direct' &&
-          c.members.some(m => m.userId === userId) &&
-          c.members.some(m => m.userId === partner.id)
-        ) {
-          existingChat = c;
-          break;
-        }
-      }
-
-      if (!existingChat) {
-        const chatId = `chat_dm_${partner.id}_${userId}`;
-        const newChat: Chat = {
-          id: chatId,
-          type: 'direct',
-          members: [
-            { userId, role: 'member', joinedAt: now },
-            { userId: partner.id, role: 'member', joinedAt: now },
-          ],
-          unreadCount: 1,
-          disappearingDuration: 'off',
-          createdAt: now,
-          updatedAt: now,
-        };
-        this.state.chats.set(newChat.id, newChat);
-
-        const initialMsg: Message = {
-          id: `msg_init_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          chatId: newChat.id,
-          senderId: partner.id,
-          text: partner.defaultMsg,
-          reactions: [],
-          deletedForUserIds: [],
-          status: 'sent',
-          createdAt: now,
-        };
-        this.state.messages.set(initialMsg.id, initialMsg);
-        newChat.lastMessage = initialMsg;
-      }
     }
   }
 
