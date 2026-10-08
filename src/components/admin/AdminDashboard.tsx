@@ -125,7 +125,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Quick Verification Modal State
   const [verifyModalUser, setVerifyModalUser] = useState<UserProfile | null>(null);
   const [verifyStatusChoice, setVerifyStatusChoice] = useState<'verified' | 'unverified' | 'pending' | 'revoked'>('verified');
-  const [verifyCategoryChoice, setVerifyCategoryChoice] = useState<'individual' | 'business' | 'organization' | 'official'>('individual');
+  const [verifyCategoryChoice, setVerifyCategoryChoice] = useState<
+    'creator' | 'business' | 'support' | 'official' | 'organization' | 'individual'
+  >('creator');
   const [verifyReasonInput, setVerifyReasonInput] = useState('');
 
   // Filter & Form States
@@ -1908,16 +1910,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 text-[11px] mb-1 font-medium">Verified Account Category</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 text-[11px] font-medium">Verified Account Category & Seal</label>
+                  <VerifiedBadge status="verified" category={verifyCategoryChoice} size="sm" showPill={true} showPopover={false} />
+                </div>
                 <select
                   value={verifyCategoryChoice}
                   onChange={(e) => setVerifyCategoryChoice(e.target.value as any)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100"
                 >
-                  <option value="official">Official Platform Account</option>
-                  <option value="organization">Organization / Enterprise</option>
-                  <option value="business">Business / Commercial Entity</option>
-                  <option value="individual">Individual Creator / Public Figure</option>
+                  <option value="creator">Verified Creator (Public Creator / Digital Artist / Notable)</option>
+                  <option value="business">Verified Business (Commercial Entity / Company / Merchant)</option>
+                  <option value="support">Official Support (Customer Care / Platform Security Agent)</option>
+                  <option value="official">Official Platform Account (Core Infrastructure)</option>
+                  <option value="organization">Verified Organization (Enterprise / NGO / Academic)</option>
                 </select>
               </div>
 

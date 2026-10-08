@@ -288,9 +288,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       <span className={`font-semibold text-xs truncate ${isSelected ? 'text-cyan-300' : 'text-slate-100'}`}>
                         {name}
                       </span>
-                      {verificationStatus === 'verified' && (
-                        <VerifiedBadge status="verified" category={verificationCategory} size="sm" />
-                      )}
+                      {verificationStatus === 'verified' ? (
+                        <VerifiedBadge status="verified" category={verificationCategory} size="sm" showPopover={false} />
+                      ) : chat.id === 'chat_announcements' ? (
+                        <VerifiedBadge status="verified" category="official" size="sm" showPopover={false} />
+                      ) : null}
                     </div>
                     {chat.lastMessage && (
                       <span className="text-[10px] text-slate-500 font-mono shrink-0">

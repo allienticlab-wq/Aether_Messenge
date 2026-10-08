@@ -314,7 +314,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             <div className="flex items-center gap-1.5 mb-1 text-[11px] font-semibold text-cyan-400">
               <span className="truncate">{message.sender.displayName}</span>
               {message.sender.verificationStatus === 'verified' && (
-                <VerifiedBadge status="verified" category={message.sender.verificationCategory} size="sm" />
+                <VerifiedBadge
+                  status="verified"
+                  category={message.sender.verificationCategory}
+                  size="xs"
+                  displayName={message.sender.displayName}
+                  username={message.sender.username}
+                />
               )}
             </div>
           )}

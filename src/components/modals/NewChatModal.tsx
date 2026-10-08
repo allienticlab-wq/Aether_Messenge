@@ -234,7 +234,14 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onR
                       <div className="flex items-center gap-1.5">
                         <span className="font-semibold text-xs text-slate-100 truncate">{user.displayName}</span>
                         {user.verificationStatus === 'verified' && (
-                          <VerifiedBadge status="verified" category={user.verificationCategory} size="sm" />
+                          <VerifiedBadge
+                            status="verified"
+                            category={user.verificationCategory}
+                            size="xs"
+                            showPill={true}
+                            displayName={user.displayName}
+                            username={user.username}
+                          />
                         )}
                       </div>
                       <div className="text-[11px] text-slate-400 truncate">

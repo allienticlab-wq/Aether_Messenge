@@ -7,7 +7,13 @@ export type UserRole = 'super_admin' | 'admin' | 'moderator' | 'support' | 'user
 
 export type VerificationStatus = 'unverified' | 'pending' | 'verified' | 'rejected' | 'revoked';
 
-export type VerificationCategory = 'individual' | 'business' | 'organization' | 'official';
+export type VerificationCategory =
+  | 'creator'
+  | 'business'
+  | 'support'
+  | 'official'
+  | 'organization'
+  | 'individual';
 
 export interface UserProfile {
   id: string;

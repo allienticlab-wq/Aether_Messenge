@@ -586,6 +586,7 @@ apiRouter.get('/verification/badge/my-status', requireAuth, (req: Request, res: 
 
 apiRouter.get('/chats', requireAuth, (req: Request, res: Response) => {
   const user = (req as any).user;
+  db.ensureUserDefaultChats(user.id);
   const list: Chat[] = [];
 
   for (const c of db.state.chats.values()) {

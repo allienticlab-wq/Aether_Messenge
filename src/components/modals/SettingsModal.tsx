@@ -279,24 +279,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             <form onSubmit={handleSaveProfile} className="space-y-4">
               {/* Profile Card Header with Verified Badge */}
               <div className="p-4 rounded-xl bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-3.5">
-                  <div className="relative">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="relative shrink-0">
                     <img
                       src={avatarUrl || currentUser.avatarUrl}
                       alt={displayName}
                       className="w-16 h-16 rounded-full object-cover border-2 border-cyan-500/40 shadow-md"
                     />
                     {currentUser.verificationStatus === 'verified' && (
-                      <div className="absolute -bottom-1 -right-1">
-                        <VerifiedBadge status="verified" category={currentUser.verificationCategory} size="sm" />
+                      <div className="absolute -bottom-1 -right-1 bg-slate-900 rounded-full p-0.5 border border-slate-700">
+                        <VerifiedBadge
+                          status="verified"
+                          category={currentUser.verificationCategory}
+                          size="sm"
+                          showPopover={false}
+                        />
                       </div>
                     )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-base text-slate-100">{currentUser.displayName}</span>
-                      {currentUser.verificationStatus === 'verified' && (
-                        <VerifiedBadge status="verified" category={currentUser.verificationCategory} size="md" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-base text-slate-100 truncate">{currentUser.displayName}</span>
+                      {currentUser.verificationStatus === 'verified' ? (
+                        <VerifiedBadge
+                          status="verified"
+                          category={currentUser.verificationCategory}
+                          size="md"
+                          showPill={true}
+                          displayName={currentUser.displayName}
+                          username={currentUser.username}
+                          verifiedAt={currentUser.verifiedAt}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={onOpenVerificationModal}
+                          className="text-[10px] text-cyan-400 hover:underline inline-flex items-center gap-1 font-medium bg-cyan-950/40 px-2 py-0.5 rounded-full border border-cyan-800/40"
+                        >
+                          <Award className="w-3 h-3" />
+                          <span>Get Verified</span>
+                        </button>
                       )}
                     </div>
                     <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
@@ -305,7 +327,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                     </div>
                     {currentUser.verificationStatus === 'verified' && (
                       <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-700/50 text-[10px] text-cyan-300 font-medium">
-                        <span>Verified {currentUser.verificationCategory || 'Account'}</span>
+                        <Award className="w-3 h-3 text-cyan-400" />
+                        <span>Official {currentUser.verificationCategory === 'business' ? 'Business' : currentUser.verificationCategory === 'support' ? 'Support' : currentUser.verificationCategory === 'official' ? 'Official Account' : 'Creator'} Mark</span>
                         {currentUser.verificationExpiry && (
                           <span className="text-slate-400">&bull; Valid until {new Date(currentUser.verificationExpiry).toLocaleDateString()}</span>
                         )}
@@ -637,6 +660,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                   >
                     Register Passkey
                   </button>
+                </div>
+              </div>
+
+              {/* Official Verification Mark & Badges */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Award className="w-5 h-5 text-cyan-400" />
+                    <div>
+                      <div className="font-semibold text-slate-200">Official Verification Mark</div>
+                      <div className="text-[11px] text-slate-400">
+                        Authentic badges for Verified Creators, Businesses, and Support.
+                      </div>
+                    </div>
+                  </div>
+                  {currentUser.verificationStatus === 'verified' ? (
+                    <VerifiedBadge
+                      status="verified"
+                      category={currentUser.verificationCategory}
+                      size="md"
+                      showPill={true}
+                    />
+                  ) : (
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 capitalize">
+                      {currentUser.verificationStatus || 'Unverified'}
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-xs space-y-2">
+                  <div className="text-[11px] text-slate-300 leading-relaxed">
+                    Official verification badges establish authenticity, safeguard anti-impersonation rights, and display authoritative seals across chat headers and profile cards.
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenVerificationModal();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Award className="w-4 h-4" />
+                      <span>{currentUser.verificationStatus === 'verified' ? 'Manage Verification Badge' : 'Request Official Badge'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.js';
 import { VerificationCategory } from '../../types/index.js';
-import { X, Award, ShieldCheck, Building2, UserCheck, AlertCircle, FileText, CheckCircle2 } from 'lucide-react';
+import {
+  X,
+  Award,
+  ShieldCheck,
+  Building2,
+  UserCheck,
+  AlertCircle,
+  FileText,
+  CheckCircle2,
+  Headphones,
+  Sparkles
+} from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 
 interface VerificationModalProps {
@@ -12,7 +23,7 @@ interface VerificationModalProps {
 export const VerificationModal: React.FC<VerificationModalProps> = ({ isOpen, onClose }) => {
   const { currentUser, refreshUser } = useAuth();
 
-  const [category, setCategory] = useState<VerificationCategory>('individual');
+  const [category, setCategory] = useState<VerificationCategory>('creator');
   const [organizationName, setOrganizationName] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [documentType, setDocumentType] = useState('Government-Issued ID (Passport/National ID)');
@@ -111,13 +122,14 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ isOpen, on
           {currentUser.verificationStatus !== 'verified' && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block font-medium text-slate-200 mb-2">Verification Category</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="block font-medium text-slate-200 mb-2">Select Verification Badge Tier</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
-                    { id: 'individual', label: 'Individual Figure', icon: UserCheck, desc: 'Creators, journalists, leaders' },
-                    { id: 'business', label: 'Commercial Business', icon: ShieldCheck, desc: 'Registered businesses' },
-                    { id: 'organization', label: 'Organization / NGO', icon: Building2, desc: 'Universities, research, non-profits' },
-                    { id: 'official', label: 'Official Platform Account', icon: Award, desc: 'Enterprise core operations' },
+                    { id: 'creator', label: 'Verified Creator', icon: Sparkles, desc: 'Digital artists, journalists, educators, notable creators' },
+                    { id: 'business', label: 'Verified Business', icon: ShieldCheck, desc: 'Commercial companies, retail merchants, enterprise brands' },
+                    { id: 'support', label: 'Official Support', icon: Headphones, desc: 'Authorized customer service, security helpdesk agents' },
+                    { id: 'official', label: 'Official Platform Account', icon: Award, desc: 'Enterprise infrastructure & operations accounts' },
+                    { id: 'organization', label: 'Verified Organization', icon: Building2, desc: 'Registered non-profits, academic bodies, research labs' },
                   ].map((item) => {
                     const Icon = item.icon;
                     const isSelected = category === item.id;
@@ -126,20 +138,51 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({ isOpen, on
                         key={item.id}
                         type="button"
                         onClick={() => setCategory(item.id as VerificationCategory)}
-                        className={`p-3 text-left rounded-xl border transition flex flex-col justify-between ${
+                        className={`p-3 text-left rounded-xl border transition flex flex-col justify-between cursor-pointer ${
                           isSelected
-                            ? 'bg-cyan-950/40 border-cyan-500/60 text-slate-100'
+                            ? 'bg-cyan-950/40 border-cyan-500/60 text-slate-100 ring-1 ring-cyan-500/30'
                             : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Icon className={`w-4 h-4 ${isSelected ? 'text-cyan-400' : 'text-slate-400'}`} />
-                          <span className="font-semibold text-xs text-slate-100">{item.label}</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <Icon className={`w-4 h-4 ${isSelected ? 'text-cyan-400' : 'text-slate-400'}`} />
+                            <span className="font-semibold text-xs text-slate-100">{item.label}</span>
+                          </div>
+                          <VerifiedBadge status="verified" category={item.id as VerificationCategory} size="sm" showPopover={false} />
                         </div>
                         <span className="text-[10px] text-slate-400">{item.desc}</span>
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Dynamic Live Badge Preview */}
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                  Live Preview in Chat Header & User Profile
+                </span>
+                <div className="flex items-center gap-2 p-2 bg-slate-900 rounded-lg border border-slate-800">
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.displayName}
+                    className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-xs text-slate-100">{currentUser.displayName}</span>
+                      <VerifiedBadge
+                        status="verified"
+                        category={category}
+                        size="sm"
+                        showPill={true}
+                        displayName={currentUser.displayName}
+                        username={currentUser.username}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">@{currentUser.username}</span>
+                  </div>
                 </div>
               </div>
 

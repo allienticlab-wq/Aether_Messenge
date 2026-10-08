@@ -75,11 +75,27 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
           onClick={() => setInfoDrawerOpen(!infoDrawerOpen)}
           className="min-w-0 cursor-pointer"
         >
-          <div className="flex items-center gap-1.5">
-            <h2 className="font-semibold text-slate-100 text-sm truncate">{title}</h2>
-            {verificationStatus === 'verified' && (
-              <VerifiedBadge status="verified" category={verificationCategory} size="sm" />
-            )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h2 className="font-semibold text-slate-100 text-sm truncate max-w-[200px] sm:max-w-none">{title}</h2>
+            {verificationStatus === 'verified' ? (
+              <VerifiedBadge
+                status="verified"
+                category={verificationCategory}
+                size="sm"
+                showPill={true}
+                displayName={title}
+                username={partnerProfile?.username}
+                verifiedAt={partnerProfile?.verifiedAt}
+              />
+            ) : activeChat.id === 'chat_announcements' || activeChat.name?.includes('Official Announcements') ? (
+              <VerifiedBadge
+                status="verified"
+                category="official"
+                size="sm"
+                showPill={true}
+                displayName={title}
+              />
+            ) : null}
             {activeChat.disappearingDuration && activeChat.disappearingDuration !== 'off' && (
               <span className="flex items-center gap-0.5 text-[10px] text-cyan-400 font-mono" title={`Disappearing messages: ${activeChat.disappearingDuration}`}>
                 <Clock className="w-3 h-3" />
@@ -88,17 +104,31 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
             )}
           </div>
 
-          <div className="text-[11px] text-slate-400 truncate">
+          <div className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
             {isTyping ? (
               <span className="text-cyan-400 font-medium animate-pulse">typing...</span>
             ) : isDirect ? (
-              isOnline ? (
-                <span className="text-emerald-400">Online</span>
-              ) : partnerProfile?.lastSeen ? (
-                `Last seen ${new Date(partnerProfile.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              ) : (
-                'Offline'
-              )
+              <>
+                {verificationStatus === 'verified' && (
+                  <span className="text-slate-400 font-medium hidden sm:inline">
+                    {verificationCategory === 'business'
+                      ? 'Official Business Account'
+                      : verificationCategory === 'support'
+                      ? 'Official Support Representative'
+                      : verificationCategory === 'official'
+                      ? 'Official Platform Identity'
+                      : 'Verified Creator'}
+                    {' • '}
+                  </span>
+                )}
+                {isOnline ? (
+                  <span className="text-emerald-400 font-medium">Online</span>
+                ) : partnerProfile?.lastSeen ? (
+                  `Last seen ${new Date(partnerProfile.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                ) : (
+                  'Offline'
+                )}
+              </>
             ) : (
               `${activeChat.members.length} members`
             )}

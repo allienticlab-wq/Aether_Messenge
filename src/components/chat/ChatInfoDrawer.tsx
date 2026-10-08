@@ -93,23 +93,91 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
       <div className="p-5 space-y-6">
         {/* Profile Lockup */}
         <div className="flex flex-col items-center text-center space-y-2 pb-4 border-b border-slate-800">
-          <img
-            src={avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'}
-            alt={title}
-            className="w-20 h-20 rounded-full object-cover border-2 border-slate-700 shadow-lg"
-          />
+          <div className="relative">
+            <img
+              src={avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'}
+              alt={title}
+              className="w-20 h-20 rounded-full object-cover border-2 border-slate-700 shadow-lg"
+            />
+            {partnerProfile?.verificationStatus === 'verified' && (
+              <div className="absolute -bottom-1 -right-1 bg-slate-900 rounded-full p-0.5 border border-slate-700">
+                <VerifiedBadge
+                  status="verified"
+                  category={partnerProfile?.verificationCategory}
+                  size="md"
+                  showPopover={false}
+                />
+              </div>
+            )}
+          </div>
           <div>
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
               <span className="font-bold text-slate-100 text-base">{title}</span>
-              {partnerProfile?.verificationStatus === 'verified' && (
-                <VerifiedBadge status="verified" category={partnerProfile?.verificationCategory} size="md" />
-              )}
+              {partnerProfile?.verificationStatus === 'verified' ? (
+                <VerifiedBadge
+                  status="verified"
+                  category={partnerProfile?.verificationCategory}
+                  size="md"
+                  showPill={true}
+                  displayName={title}
+                  username={partnerProfile?.username}
+                  verifiedAt={partnerProfile?.verifiedAt}
+                />
+              ) : activeChat.id === 'chat_announcements' ? (
+                <VerifiedBadge
+                  status="verified"
+                  category="official"
+                  size="md"
+                  showPill={true}
+                  displayName={title}
+                />
+              ) : null}
             </div>
             {isDirect && partnerProfile?.username && (
-              <span className="text-[11px] text-slate-400">@{partnerProfile.username}</span>
+              <span className="text-[11px] text-slate-400 font-mono">@{partnerProfile.username}</span>
             )}
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed max-w-xs">{about}</p>
+
+          {/* Official Verification Credentials Card */}
+          {partnerProfile?.verificationStatus === 'verified' && (
+            <div className="w-full mt-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-left space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-100">
+                  <VerifiedBadge
+                    status="verified"
+                    category={partnerProfile?.verificationCategory}
+                    size="sm"
+                    showPopover={false}
+                  />
+                  <span>
+                    {partnerProfile?.verificationCategory === 'business'
+                      ? 'Official Business Account'
+                      : partnerProfile?.verificationCategory === 'support'
+                      ? 'Official Support Representative'
+                      : partnerProfile?.verificationCategory === 'official'
+                      ? 'Official System Identity'
+                      : 'Verified Creator Profile'}
+                  </span>
+                </div>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
+                  ACTIVE
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                {partnerProfile?.verificationReason ||
+                  'Authentic identity validated by Aether Platform Trust & Safety with guaranteed anti-impersonation protection.'}
+              </p>
+              {partnerProfile?.verifiedAt && (
+                <div className="text-[9px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-800/80">
+                  <span>Verified Since</span>
+                  <span className="font-mono text-slate-400">
+                    {new Date(partnerProfile.verifiedAt).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {statusMsg && (
