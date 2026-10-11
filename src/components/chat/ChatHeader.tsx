@@ -39,7 +39,36 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
   const verificationStatus = isDirect ? partnerProfile?.verificationStatus : undefined;
   const verificationCategory = isDirect ? partnerProfile?.verificationCategory : undefined;
 
-  const isTyping = (typingUsers[activeChat.id] || []).length > 0;
+  // Real-time typing indicators for other participants in activeChat
+  const typingUserIds = (typingUsers[activeChat.id] || []).filter(
+    (id) => id !== currentUser?.id
+  );
+  const isTyping = typingUserIds.length > 0;
+
+  // Format descriptive typing label with participants' display names
+  const getTypingLabel = () => {
+    if (!isTyping) return '';
+
+    if (isDirect) {
+      return partnerProfile?.displayName ? `${partnerProfile.displayName} is typing` : 'typing';
+    }
+
+    // Group or community channel: resolve names of typing members
+    const names = typingUserIds.map((userId) => {
+      const member = activeChat.members.find((m) => m.userId === userId);
+      return member?.user?.displayName || member?.user?.username || 'Member';
+    });
+
+    if (names.length === 1) {
+      return `${names[0]} is typing`;
+    }
+    if (names.length === 2) {
+      return `${names[0]} and ${names[1]} are typing`;
+    }
+    return `${names[0]} and ${names.length - 1} others are typing`;
+  };
+
+  const typingLabel = getTypingLabel();
 
   return (
     <div className="h-16 px-4 md:px-6 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-md flex items-center justify-between shrink-0 select-none">
@@ -55,19 +84,35 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
           </button>
         )}
 
-        {/* Avatar with Presence Ring */}
+        {/* Avatar with Presence Ring & Typing Glow Indicator */}
         <div
           onClick={() => setInfoDrawerOpen(!infoDrawerOpen)}
           className="relative cursor-pointer shrink-0"
+          title={isTyping ? typingLabel : title}
         >
           <img
             src={avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'}
             alt={title}
-            className="w-10 h-10 rounded-full object-cover border border-slate-700/80 shadow-sm"
+            className={`w-10 h-10 rounded-full object-cover border transition-all duration-300 ${
+              isTyping
+                ? 'border-cyan-400 ring-2 ring-cyan-500/50 shadow-md shadow-cyan-500/20'
+                : 'border-slate-700/80 shadow-sm'
+            }`}
           />
-          {isOnline && (
+          {isTyping ? (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 px-1 py-0.5 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center border-2 border-slate-900 shadow-sm"
+              title={typingLabel}
+            >
+              <span className="flex items-center gap-0.5 px-0.5">
+                <span className="w-1 h-1 rounded-full bg-slate-950 animate-typing-dot-1" />
+                <span className="w-1 h-1 rounded-full bg-slate-950 animate-typing-dot-2" />
+                <span className="w-1 h-1 rounded-full bg-slate-950 animate-typing-dot-3" />
+              </span>
+            </span>
+          ) : isOnline ? (
             <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-900" />
-          )}
+          ) : null}
         </div>
 
         {/* Title & Status */}
@@ -77,6 +122,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
         >
           <div className="flex items-center gap-1.5 flex-wrap">
             <h2 className="font-semibold text-slate-100 text-sm truncate max-w-[200px] sm:max-w-none">{title}</h2>
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.5 rounded-full font-mono shadow-sm cursor-pointer hover:bg-emerald-900/60 transition"
+              title="AES-256-GCM End-to-End Encrypted Conversation. Click for details."
+              onClick={(e) => {
+                e.stopPropagation();
+                setInfoDrawerOpen(!infoDrawerOpen);
+              }}
+            >
+              <span className="text-[10px]">🔒</span>
+              <span className="hidden sm:inline font-semibold">E2EE</span>
+            </span>
             {verificationStatus === 'verified' ? (
               <VerifiedBadge
                 status="verified"
@@ -104,9 +160,16 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
             )}
           </div>
 
-          <div className="text-[11px] text-slate-400 truncate flex items-center gap-1.5">
+          <div className="text-[11px] text-slate-400 truncate flex items-center gap-1.5 min-h-[16px]">
             {isTyping ? (
-              <span className="text-cyan-400 font-medium animate-pulse">typing...</span>
+              <div className="flex items-center gap-1 text-cyan-400 font-medium">
+                <span className="truncate max-w-[190px] sm:max-w-xs">{typingLabel}</span>
+                <span className="inline-flex items-center gap-0.5 shrink-0 ml-0.5" aria-hidden="true">
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-1" />
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-2" />
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-3" />
+                </span>
+              </div>
             ) : isDirect ? (
               <>
                 {verificationStatus === 'verified' && (

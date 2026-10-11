@@ -7,6 +7,7 @@ import { SmsProviderService } from './sms-service.js';
 import { messageCentralService } from './message-central.js';
 import {
   Message,
+  ScheduledMessage,
   Attachment,
   Chat,
   Community,
@@ -1034,6 +1035,12 @@ apiRouter.post('/chats/:id/messages', requireAuth, (req: Request, res: Response)
     payload: newMessage,
   });
 
+  // Explicitly clear typing indicator for the message author
+  wsManager.broadcastToChat(chatId, {
+    type: 'typing_indicator',
+    payload: { chatId, userId: user.id, isTyping: false },
+  }, user.id);
+
   res.json({ message: newMessage });
 });
 
@@ -1076,6 +1083,202 @@ apiRouter.post('/chats/:id/read', requireAuth, (req: Request, res: Response) => 
 
   res.json({ success: true, updatedCount: updatedIds.length, readAt: now });
 });
+
+// ==============================================================================
+// SCHEDULED MESSAGES API & AUTOMATIC SCHEDULER
+// ==============================================================================
+
+// Get scheduled messages for a chat
+apiRouter.get('/chats/:id/scheduled-messages', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const chatId = req.params.id;
+
+  const chat = db.state.chats.get(chatId);
+  if (!chat || !chat.members.some(m => m.userId === user.id)) {
+    return res.status(403).json({ error: 'Cannot access this chat.' });
+  }
+
+  const list: ScheduledMessage[] = [];
+  for (const item of db.state.scheduledMessages.values()) {
+    if (item.chatId === chatId && item.senderId === user.id && item.status === 'pending') {
+      const sender = db.getUserById(item.senderId);
+      list.push({
+        ...item,
+        sender: sender ? db.toPublicProfile(sender) : undefined,
+      });
+    }
+  }
+
+  list.sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+  res.json({ scheduledMessages: list });
+});
+
+// Create a scheduled message
+apiRouter.post('/chats/:id/scheduled-messages', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const chatId = req.params.id;
+  const { text, attachments, replyTo, scheduledFor } = req.body;
+
+  const chat = db.state.chats.get(chatId);
+  if (!chat || !chat.members.some(m => m.userId === user.id)) {
+    return res.status(403).json({ error: 'Cannot access this chat.' });
+  }
+
+  if (!scheduledFor) {
+    return res.status(400).json({ error: 'Scheduled date and time is required.' });
+  }
+
+  const targetTime = new Date(scheduledFor).getTime();
+  if (isNaN(targetTime) || targetTime <= Date.now() + 5000) {
+    return res.status(400).json({ error: 'Scheduled time must be in the future.' });
+  }
+
+  const now = new Date().toISOString();
+  const scheduledItem: ScheduledMessage = {
+    id: `sched_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    chatId,
+    senderId: user.id,
+    sender: db.toPublicProfile(user),
+    text: text || '',
+    attachments: attachments || [],
+    replyTo,
+    scheduledFor: new Date(targetTime).toISOString(),
+    status: 'pending',
+    createdAt: now,
+  };
+
+  db.state.scheduledMessages.set(scheduledItem.id, scheduledItem);
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'scheduled_message_created',
+    payload: scheduledItem,
+  });
+
+  res.json({ scheduledMessage: scheduledItem });
+});
+
+// Cancel a scheduled message
+apiRouter.delete('/chats/:id/scheduled-messages/:scheduledId', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { id: chatId, scheduledId } = req.params;
+
+  const item = db.state.scheduledMessages.get(scheduledId);
+  if (!item || item.chatId !== chatId) {
+    return res.status(404).json({ error: 'Scheduled message not found.' });
+  }
+
+  if (item.senderId !== user.id) {
+    return res.status(403).json({ error: 'Cannot cancel scheduled messages sent by others.' });
+  }
+
+  item.status = 'cancelled';
+  db.state.scheduledMessages.delete(scheduledId);
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'scheduled_message_cancelled',
+    payload: { scheduledId },
+  });
+
+  res.json({ success: true, message: 'Scheduled message cancelled.' });
+});
+
+// Send a scheduled message immediately
+apiRouter.post('/chats/:id/scheduled-messages/:scheduledId/send-now', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { id: chatId, scheduledId } = req.params;
+
+  const item = db.state.scheduledMessages.get(scheduledId);
+  if (!item || item.chatId !== chatId || item.status !== 'pending') {
+    return res.status(404).json({ error: 'Pending scheduled message not found.' });
+  }
+
+  if (item.senderId !== user.id) {
+    return res.status(403).json({ error: 'Cannot send scheduled messages sent by others.' });
+  }
+
+  item.status = 'sent';
+  db.state.scheduledMessages.delete(scheduledId);
+
+  const now = new Date().toISOString();
+  const chat = db.state.chats.get(chatId);
+
+  const newMessage: Message = {
+    id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    chatId,
+    senderId: user.id,
+    sender: db.toPublicProfile(user),
+    text: item.text || '',
+    attachments: item.attachments || [],
+    reactions: [],
+    replyTo: item.replyTo,
+    deletedForUserIds: [],
+    status: 'sent',
+    createdAt: now,
+  };
+
+  db.state.messages.set(newMessage.id, newMessage);
+  if (chat) {
+    chat.lastMessage = newMessage;
+    chat.updatedAt = now;
+  }
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'new_message',
+    payload: newMessage,
+  });
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'scheduled_message_sent',
+    payload: { scheduledId, message: newMessage },
+  });
+
+  res.json({ success: true, message: newMessage });
+});
+
+// Background Job to auto-dispatch scheduled messages when target time is reached
+setInterval(() => {
+  const now = Date.now();
+  for (const item of db.state.scheduledMessages.values()) {
+    if (item.status === 'pending' && new Date(item.scheduledFor).getTime() <= now) {
+      item.status = 'sent';
+      db.state.scheduledMessages.delete(item.id);
+
+      const chat = db.state.chats.get(item.chatId);
+      const sender = db.getUserById(item.senderId);
+
+      const isoNow = new Date().toISOString();
+      const newMessage: Message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        chatId: item.chatId,
+        senderId: item.senderId,
+        sender: sender ? db.toPublicProfile(sender) : undefined,
+        text: item.text || '',
+        attachments: item.attachments || [],
+        reactions: [],
+        replyTo: item.replyTo,
+        deletedForUserIds: [],
+        status: 'sent',
+        createdAt: isoNow,
+      };
+
+      db.state.messages.set(newMessage.id, newMessage);
+      if (chat) {
+        chat.lastMessage = newMessage;
+        chat.updatedAt = isoNow;
+      }
+
+      wsManager.broadcastToChat(item.chatId, {
+        type: 'new_message',
+        payload: newMessage,
+      });
+
+      wsManager.broadcastToChat(item.chatId, {
+        type: 'scheduled_message_sent',
+        payload: { scheduledId: item.id, message: newMessage },
+      });
+    }
+  }
+}, 2000);
 
 // Edit Message
 apiRouter.put('/messages/:id', requireAuth, (req: Request, res: Response) => {

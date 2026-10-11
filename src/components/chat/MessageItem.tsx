@@ -112,13 +112,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   // Toggle Audio Playback
   const handleToggleAudio = (voiceUrl?: string) => {
     if (!voiceUrl) return;
-    if (!audioRef.current) {
+    if (!audioRef.current || audioRef.current.src !== voiceUrl) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
       const audio = new Audio(voiceUrl);
       audio.playbackRate = playbackSpeed;
       audioRef.current = audio;
 
       audio.ontimeupdate = () => {
-        if (audio.duration) {
+        if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
           setAudioProgress((audio.currentTime / audio.duration) * 100);
         }
       };
@@ -134,7 +137,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       setIsPlayingAudio(false);
     } else {
       audioRef.current.playbackRate = playbackSpeed;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch((err) => {
+        console.error('Audio playback error:', err);
+      });
       setIsPlayingAudio(true);
     }
   };
@@ -462,14 +467,17 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             {isMe && (
-              <span
-                className="inline-flex items-center ml-0.5 cursor-help"
-                title={
-                  message.status === 'read'
-                    ? message.readBy && message.readBy.length > 0
-                      ? `Read at ${new Date(message.readBy[0].readAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}${
-                          isGroup ? ` by ${message.readBy.length} member(s)` : ''
-                        }`
+              <span className="inline-flex items-center ml-0.5 cursor-help">
+                {(() => {
+                  const recipientRead = message.readBy?.find((r) => r.userId !== currentUser?.id);
+                  const isRead = message.status === 'read' || Boolean(recipientRead);
+                  const readTime = recipientRead?.readAt
+                    ? new Date(recipientRead.readAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : undefined;
+
+                  const statusTitle = isRead
+                    ? readTime
+                      ? `Read at ${readTime}${isGroup ? ` by ${message.readBy?.length} member(s)` : ''}`
                       : 'Read by recipient'
                     : message.status === 'delivered'
                     ? 'Delivered to recipient device'
@@ -477,20 +485,24 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     ? 'Sent to server'
                     : message.status === 'failed'
                     ? 'Failed to send'
-                    : 'Sending...'
-                }
-              >
-                {message.status === 'read' ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.4)] stroke-[2.5]" />
-                ) : message.status === 'delivered' ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
-                ) : message.status === 'sent' ? (
-                  <Check className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
-                ) : message.status === 'failed' ? (
-                  <AlertCircle className="w-3 h-3 text-rose-400" />
-                ) : (
-                  <Clock className="w-3 h-3 animate-spin opacity-70" />
-                )}
+                    : 'Sending...';
+
+                  return (
+                    <span title={statusTitle} className="inline-flex items-center">
+                      {isRead ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-sky-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)] stroke-[2.5]" />
+                      ) : message.status === 'delivered' ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
+                      ) : message.status === 'sent' ? (
+                        <Check className="w-3.5 h-3.5 text-slate-300 opacity-80 stroke-[2]" />
+                      ) : message.status === 'failed' ? (
+                        <AlertCircle className="w-3 h-3 text-rose-400" />
+                      ) : (
+                        <Clock className="w-3 h-3 animate-spin opacity-70" />
+                      )}
+                    </span>
+                  );
+                })()}
               </span>
             )}
           </div>

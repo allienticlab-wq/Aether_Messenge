@@ -17,10 +17,14 @@ import {
   Pause,
   Trash2,
   Sparkles,
-  Sticker
+  Sticker,
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { PhotoSendPreviewModal } from './PhotoSendPreviewModal.js';
 import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
+import { ScheduleMessageModal } from '../modals/ScheduleMessageModal.js';
+import { ScheduledMessagesModal } from '../modals/ScheduledMessagesModal.js';
 
 interface MessageComposerProps {
   replyMessage: Message | null;
@@ -28,20 +32,40 @@ interface MessageComposerProps {
 }
 
 export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, onClearReply }) => {
-  const { sendMessage, sendTyping, activeChat } = useChat();
+  const {
+    sendMessage,
+    scheduleMessage,
+    scheduledMessages,
+    cancelScheduledMessage,
+    sendScheduledMessageNow,
+    sendTyping,
+    activeChat,
+  } = useChat();
 
   const [text, setText] = useState('');
   const [attachmentDrawerOpen, setAttachmentDrawerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [gifPickerOpen, setGifPickerOpen] = useState(false);
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [viewScheduledModalOpen, setViewScheduledModalOpen] = useState(false);
+  const [scheduleToast, setScheduleToast] = useState<string | null>(null);
   const [gifQuery, setGifQuery] = useState('');
 
-  // Voice recording state
+  // Real Microphone MediaRecorder state
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
+  const [micError, setMicError] = useState<string | null>(null);
+  const [liveVolumeLevels, setLiveVolumeLevels] = useState<number[]>([25, 40, 60, 35, 80, 50, 30, 65, 45, 30, 25, 20]);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const recordTimerRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -81,16 +105,108 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
     },
   ];
 
-  // Typing event emission
-  useEffect(() => {
-    if (text.length > 0) {
-      sendTyping(true);
-      const timer = setTimeout(() => sendTyping(false), 2000);
-      return () => clearTimeout(timer);
-    } else {
-      sendTyping(false);
+  // Ref to track typing throttle and timers
+  const typingThrottleRef = useRef<number>(0);
+  const stopTypingTimerRef = useRef<any>(null);
+  const activeChatIdRef = useRef<string | undefined>(activeChat?.id);
+
+  // Helper to get supported audio MIME type for MediaRecorder
+  const getSupportedMimeType = () => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      'audio/aac',
+      'audio/wav',
+    ];
+    for (const type of types) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
     }
-  }, [text]);
+    return '';
+  };
+
+  // Clean up all MediaStream, MediaRecorder, AudioContext & Animation frames
+  const cleanupRecordingStream = () => {
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch {}
+      audioContextRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+    setIsPaused(false);
+    setRecordSeconds(0);
+  };
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      cleanupRecordingStream();
+    };
+  }, []);
+
+  // Stop typing indicator on old chat when user switches activeChat
+  useEffect(() => {
+    if (activeChatIdRef.current && activeChatIdRef.current !== activeChat?.id) {
+      sendTyping(false, activeChatIdRef.current);
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+      typingThrottleRef.current = 0;
+    }
+    activeChatIdRef.current = activeChat?.id;
+  }, [activeChat?.id]);
+
+  // Clean unmount typing stop
+  useEffect(() => {
+    return () => {
+      if (activeChatIdRef.current) {
+        sendTyping(false, activeChatIdRef.current);
+      }
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    };
+  }, []);
+
+  // Real-time typing event emission with 2s heartbeat throttle and 2.5s inactivity auto-stop
+  useEffect(() => {
+    if (!activeChat) return;
+
+    if (text.trim().length > 0) {
+      const now = Date.now();
+      if (now - typingThrottleRef.current > 2000) {
+        typingThrottleRef.current = now;
+        sendTyping(true, activeChat.id);
+      }
+
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+      stopTypingTimerRef.current = setTimeout(() => {
+        sendTyping(false, activeChat.id);
+        typingThrottleRef.current = 0;
+      }, 2500);
+    } else {
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+      sendTyping(false, activeChat.id);
+      typingThrottleRef.current = 0;
+    }
+
+    return () => {
+      if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    };
+  }, [text, activeChat?.id]);
 
   // Voice recording timer
   useEffect(() => {
@@ -121,12 +237,53 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
     const currentText = text.trim();
     setText('');
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    if (activeChat) sendTyping(false, activeChat.id);
+    typingThrottleRef.current = 0;
     onClearReply();
     setEmojiPickerOpen(false);
     setGifPickerOpen(false);
     setStickerPickerOpen(false);
 
     await sendMessage(currentText, undefined, replySnippet);
+  };
+
+  const handleConfirmSchedule = async (isoDateTime: string) => {
+    if (!activeChat) return;
+
+    let replySnippet: MessageReplySnippet | undefined;
+    if (replyMessage) {
+      replySnippet = {
+        id: replyMessage.id,
+        senderId: replyMessage.senderId,
+        senderName: replyMessage.sender?.displayName || 'User',
+        text: replyMessage.text,
+      };
+    }
+
+    await scheduleMessage(activeChat.id, text, isoDateTime, [], replySnippet);
+
+    setText('');
+    onClearReply();
+    if (stopTypingTimerRef.current) clearTimeout(stopTypingTimerRef.current);
+    sendTyping(false, activeChat.id);
+    typingThrottleRef.current = 0;
+    setEmojiPickerOpen(false);
+    setGifPickerOpen(false);
+    setStickerPickerOpen(false);
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    const formattedTime = new Date(isoDateTime).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setScheduleToast(`Message scheduled for ${formattedTime}`);
+    setTimeout(() => setScheduleToast(null), 4000);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -136,40 +293,163 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
     }
   };
 
-  // Start Voice Recording
-  const startRecording = () => {
-    setIsRecording(true);
-    setIsPaused(false);
+  // Start Real Microphone Audio Recording
+  const startRecording = async () => {
+    setMicError(null);
+    audioChunksRef.current = [];
     setRecordSeconds(0);
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setMicError('Microphone audio recording is not supported in this browser.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      mediaStreamRef.current = stream;
+
+      const mimeType = getSupportedMimeType();
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      // Real-time Audio Frequency Analyser for Live Waveform Metering
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          audioContextRef.current = audioCtx;
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          source.connect(analyser);
+          analyserRef.current = analyser;
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateVolume = () => {
+            if (analyserRef.current && !isPaused) {
+              analyserRef.current.getByteFrequencyData(dataArray);
+              const samples: number[] = [];
+              const step = Math.max(1, Math.floor(dataArray.length / 12));
+              for (let i = 0; i < 12; i++) {
+                const val = dataArray[i * step] || 0;
+                const percent = Math.min(100, Math.max(15, Math.round((val / 255) * 100)));
+                samples.push(percent);
+              }
+              setLiveVolumeLevels(samples);
+            }
+            animFrameRef.current = requestAnimationFrame(updateVolume);
+          };
+          updateVolume();
+        }
+      } catch {
+        // Fallback live volume levels
+      }
+
+      mediaRecorder.start(200);
+      setIsRecording(true);
+      setIsPaused(false);
+    } catch (err: any) {
+      console.error('Failed to access microphone:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicError('Microphone permission denied. Please allow microphone access in your browser settings.');
+      } else {
+        setMicError('Unable to access microphone. Please check your audio recording device.');
+      }
+    }
+  };
+
+  // Toggle Pause / Resume
+  const togglePauseRecording = () => {
+    if (!mediaRecorderRef.current) return;
+    if (isPaused) {
+      if (mediaRecorderRef.current.state === 'paused') {
+        mediaRecorderRef.current.resume();
+      }
+      setIsPaused(false);
+    } else {
+      if (mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.pause();
+      }
+      setIsPaused(true);
+    }
   };
 
   // Cancel Voice Recording
   const cancelRecording = () => {
-    setIsRecording(false);
-    setIsPaused(false);
-    setRecordSeconds(0);
+    audioChunksRef.current = [];
+    cleanupRecordingStream();
   };
 
-  // Send Voice Note
+  // Process Recorded Blob into Data URI and Send Message
+  const processAndSendAudioBlob = async (duration: number) => {
+    const mimeType = mediaRecorderRef.current?.mimeType || getSupportedMimeType() || 'audio/webm';
+    const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+
+    if (audioBlob.size === 0) {
+      cleanupRecordingStream();
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const dataUrl = reader.result as string;
+
+      // Extract representative waveform bar heights
+      const waveform = liveVolumeLevels.length > 0
+        ? [...liveVolumeLevels, ...liveVolumeLevels].slice(0, 24)
+        : Array.from({ length: 24 }, () => Math.floor(Math.random() * 70 + 20));
+
+      const ext = mimeType.includes('mp4') ? 'm4a' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+
+      const voiceAttachment: Attachment = {
+        id: `voice_${Date.now()}`,
+        name: `Audio_Note_${new Date().toLocaleTimeString().replace(/:/g, '')}.${ext}`,
+        url: dataUrl,
+        type: 'voice',
+        mimeType,
+        size: audioBlob.size,
+        duration,
+        waveform,
+      };
+
+      cleanupRecordingStream();
+      await sendMessage('', [voiceAttachment]);
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+
+  // Stop Recording and Send Captured Audio
   const sendVoiceNote = async () => {
-    const duration = recordSeconds || 5;
-    cancelRecording();
+    const duration = recordSeconds || 1;
+    const mediaRecorder = mediaRecorderRef.current;
 
-    // Generate authentic randomized waveform
-    const waveform = Array.from({ length: 24 }, () => Math.floor(Math.random() * 80 + 20));
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      if (audioChunksRef.current.length > 0) {
+        await processAndSendAudioBlob(duration);
+      } else {
+        cleanupRecordingStream();
+      }
+      return;
+    }
 
-    const voiceAttachment: Attachment = {
-      id: `voice_${Date.now()}`,
-      name: `Voice_Note_${new Date().toLocaleTimeString().replace(/:/g, '')}.m4a`,
-      url: 'https://actions.google.com/sounds/v1/ambiences/humming_room_tone.ogg',
-      type: 'voice',
-      mimeType: 'audio/ogg',
-      size: 1024 * duration * 8,
-      duration,
-      waveform,
+    mediaRecorder.onstop = () => {
+      processAndSendAudioBlob(duration);
     };
 
-    await sendMessage('', [voiceAttachment]);
+    mediaRecorder.stop();
   };
 
   // Send Shared Location
@@ -296,12 +576,51 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
         </div>
       )}
 
+      {/* Scheduled Messages Banner for active chat */}
+      {activeChat && scheduledMessages.length > 0 && (
+        <div className="mb-2 px-3 py-1.5 bg-cyan-950/40 border border-cyan-800/40 rounded-xl flex items-center justify-between text-xs text-cyan-300">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>
+              <strong className="text-cyan-200">{scheduledMessages.length}</strong> message{scheduledMessages.length !== 1 ? 's' : ''} scheduled for auto-sending
+            </span>
+          </div>
+          <button
+            onClick={() => setViewScheduledModalOpen(true)}
+            className="px-2.5 py-1 text-[11px] font-semibold text-cyan-200 bg-cyan-900/60 hover:bg-cyan-800/80 rounded-lg border border-cyan-700/50 transition cursor-pointer"
+          >
+            View Scheduled
+          </button>
+        </div>
+      )}
+
+      {/* Schedule Toast notification */}
+      {scheduleToast && (
+        <div className="mb-2 px-3 py-2 bg-emerald-950/80 border border-emerald-500/40 rounded-xl flex items-center gap-2 text-xs text-emerald-200 shadow-lg">
+          <Clock className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="font-medium">{scheduleToast}</span>
+        </div>
+      )}
+
+      {/* Microphone Permission / Capture Error Banner */}
+      {micError && (
+        <div className="mb-2 p-2 px-3 bg-rose-950/90 border border-rose-800/80 rounded-xl flex items-center justify-between text-xs text-rose-200">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{micError}</span>
+          </div>
+          <button onClick={() => setMicError(null)} className="p-1 text-rose-400 hover:text-white rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Floating Attachments Drawer */}
       {attachmentDrawerOpen && (
-        <div className="absolute bottom-16 left-4 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md grid grid-cols-4 gap-2 w-80 text-xs">
+        <div className="absolute bottom-16 left-4 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md grid grid-cols-5 gap-2 w-96 text-xs">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-cyan-400 transition"
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
           >
             <div className="p-2.5 rounded-full bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
               <Image className="w-4 h-4" />
@@ -312,9 +631,22 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
           <button
             onClick={() => {
               setAttachmentDrawerOpen(false);
+              startRecording();
+            }}
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-rose-400 transition cursor-pointer"
+          >
+            <div className="p-2.5 rounded-full bg-rose-950/60 text-rose-400 border border-rose-800/50">
+              <Mic className="w-4 h-4" />
+            </div>
+            <span>Record</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setAttachmentDrawerOpen(false);
               setCameraModalOpen(true);
             }}
-            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-amber-400 transition"
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-amber-400 transition cursor-pointer"
           >
             <div className="p-2.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/50">
               <Camera className="w-4 h-4" />
@@ -324,7 +656,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-blue-400 transition"
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-blue-400 transition cursor-pointer"
           >
             <div className="p-2.5 rounded-full bg-blue-950/60 text-blue-400 border border-blue-800/50">
               <FileText className="w-4 h-4" />
@@ -334,7 +666,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
           <button
             onClick={sendLocationAttachment}
-            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-emerald-400 transition"
+            className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-emerald-400 transition cursor-pointer"
           >
             <div className="p-2.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
               <MapPin className="w-4 h-4" />
@@ -423,28 +755,29 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
       {/* Voice Recording Active Panel */}
       {isRecording ? (
-        <div className="flex items-center justify-between px-2 py-1">
+        <div className="flex items-center justify-between px-2 py-1 select-none">
           <div className="flex items-center gap-3">
             <button
               onClick={cancelRecording}
-              className="p-2 text-rose-400 hover:bg-rose-950/50 rounded-xl transition"
-              title="Cancel Recording"
+              className="p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/60 rounded-xl transition cursor-pointer"
+              title="Cancel & Discard Recording"
             >
               <Trash2 className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse" />
-              <span className="font-mono text-sm font-semibold text-slate-100">{formatTimer(recordSeconds)}</span>
+              <div className={`w-3 h-3 rounded-full bg-rose-500 ${isPaused ? 'opacity-50' : 'animate-pulse'}`} />
+              <span className="font-mono text-xs sm:text-sm font-semibold text-slate-100">{formatTimer(recordSeconds)}</span>
+              {isPaused && <span className="text-[10px] text-amber-400 font-medium font-mono">(Paused)</span>}
             </div>
 
-            {/* Simulated Live Audio Waves */}
+            {/* Real-time Web Audio Live Waveform Bars */}
             <div className="hidden sm:flex items-center gap-1 h-6 px-3">
-              {[20, 50, 80, 40, 100, 60, 30, 70, 90, 40, 60, 85].map((h, i) => (
+              {liveVolumeLevels.map((val, i) => (
                 <div
                   key={i}
-                  style={{ height: `${h}%` }}
-                  className="w-1 bg-cyan-400 rounded-full animate-wave-bar"
+                  style={{ height: `${isPaused ? 20 : val}%` }}
+                  className="w-1 bg-cyan-400 rounded-full transition-all duration-100"
                 />
               ))}
             </div>
@@ -452,19 +785,19 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsPaused(!isPaused)}
-              className="p-2 text-slate-300 hover:bg-slate-800 rounded-xl transition"
-              title={isPaused ? 'Resume' : 'Pause'}
+              onClick={togglePauseRecording}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              title={isPaused ? 'Resume Recording' : 'Pause Recording'}
             >
-              {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+              {isPaused ? <Play className="w-4 h-4 fill-current text-cyan-400" /> : <Pause className="w-4 h-4 fill-current" />}
             </button>
 
             <button
               onClick={sendVoiceNote}
-              className="p-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md font-semibold transition"
-              title="Send Voice Message"
+              className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold shadow-md shadow-cyan-950/50 transition transform hover:scale-105 cursor-pointer flex items-center gap-1"
+              title="Send Recorded Voice Message"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 ml-0.5" />
             </button>
           </div>
         </div>
@@ -527,10 +860,27 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setAttachmentDrawerOpen(false);
                 setGifPickerOpen(false);
               }}
-              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
+              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer"
               title="Stickers"
             >
               <Sticker className="w-5 h-5" />
+            </button>
+
+            <button
+              onClick={() => {
+                setScheduleModalOpen(true);
+                setEmojiPickerOpen(false);
+                setAttachmentDrawerOpen(false);
+                setGifPickerOpen(false);
+                setStickerPickerOpen(false);
+              }}
+              className="p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer relative"
+              title="Schedule Message for Later"
+            >
+              <Clock className="w-5 h-5" />
+              {scheduledMessages.length > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              )}
             </button>
           </div>
 
@@ -547,20 +897,29 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             />
           </div>
 
-          {/* Send or Voice Record Trigger */}
-          <div className="shrink-0 pb-1">
+          {/* Send or Schedule / Voice Record Trigger */}
+          <div className="shrink-0 pb-1 flex items-center gap-1">
             {text.trim() ? (
-              <button
-                onClick={handleSend}
-                className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold shadow-md shadow-cyan-950/50 transition transform hover:scale-105"
-                title="Send Message"
-              >
-                <Send className="w-4 h-4 ml-0.5" />
-              </button>
+              <>
+                <button
+                  onClick={() => setScheduleModalOpen(true)}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
+                  title="Schedule Message"
+                >
+                  <Clock className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleSend}
+                  className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold shadow-md shadow-cyan-950/50 transition transform hover:scale-105 cursor-pointer"
+                  title="Send Message Now"
+                >
+                  <Send className="w-4 h-4 ml-0.5" />
+                </button>
+              </>
             ) : (
               <button
                 onClick={startRecording}
-                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition"
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
                 title="Record Voice Message"
               >
                 <Mic className="w-4 h-4" />
@@ -590,6 +949,28 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
           aspectRatio="square"
         />
       )}
+
+      {/* Schedule Message Date & Time Picker Modal */}
+      <ScheduleMessageModal
+        isOpen={scheduleModalOpen}
+        onClose={() => setScheduleModalOpen(false)}
+        messageText={text}
+        attachments={[]}
+        onConfirmSchedule={handleConfirmSchedule}
+      />
+
+      {/* Scheduled Messages List & Management Modal */}
+      <ScheduledMessagesModal
+        isOpen={viewScheduledModalOpen}
+        onClose={() => setViewScheduledModalOpen(false)}
+        scheduledMessages={scheduledMessages}
+        onCancel={async (id) => {
+          if (activeChat) await cancelScheduledMessage(activeChat.id, id);
+        }}
+        onSendNow={async (id) => {
+          if (activeChat) await sendScheduledMessageNow(activeChat.id, id);
+        }}
+      />
     </div>
   );
 };

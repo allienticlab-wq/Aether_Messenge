@@ -31,6 +31,7 @@ class Database {
       sessions: new Map(),
       chats: new Map(),
       messages: new Map(),
+      scheduledMessages: new Map(),
       communities: new Map(),
       verificationRequests: new Map(),
       verificationHistory: [],

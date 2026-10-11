@@ -73,8 +73,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     (currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'admin'))
   );
 
-  // Mode: 'phone' | 'email' | 'qr' | 'admin'
-  const [authMode, setAuthMode] = useState<'phone' | 'email' | 'qr' | 'admin'>(() => {
+  // Mode: 'email' | 'qr' | 'admin'
+  const [authMode, setAuthMode] = useState<'email' | 'qr' | 'admin'>(() => {
     try {
       if (typeof window !== 'undefined') {
         const hostname = window.location.hostname.toLowerCase();
@@ -88,7 +88,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         }
       }
     } catch {}
-    return 'phone';
+    return 'email';
   });
 
   // QR Web Login State
@@ -127,6 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   // Email Auth states
   const [emailTab, setEmailTab] = useState<'signin' | 'signup'>('signin');
   const [emailInput, setEmailInput] = useState('');
+  const [customUsername, setCustomUsername] = useState('');
   const [emailPassword, setEmailPassword] = useState('');
   const [emailDisplayName, setEmailDisplayName] = useState('');
   const [showEmailPassword, setShowEmailPassword] = useState(false);
@@ -161,7 +162,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const cleanPhoneDigits = phoneNumber.replace(/\D/g, '');
   const fullPhoneString = `+${rawCountryCode} ${cleanPhoneDigits}`;
 
-  const handleModeChange = (mode: 'phone' | 'email' | 'qr' | 'admin') => {
+  const handleModeChange = (mode: 'email' | 'qr' | 'admin') => {
     setAuthMode(mode);
     setError(null);
     setSuccessMsg(null);
@@ -384,12 +385,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
+    const cleanUsername = (
+      customUsername.trim().replace(/^@/, '') ||
+      emailInput.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') + Math.floor(10 + Math.random() * 90)
+    ).toLowerCase();
+
     setIsSubmitting(true);
     setError(null);
     try {
       const res = await register({
         email: emailInput.trim(),
-        username: emailInput.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') + Math.floor(100 + Math.random() * 900),
+        username: cleanUsername,
         displayName: emailDisplayName.trim(),
         password: emailPassword,
       });
@@ -400,7 +406,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       if (avatarUrl) {
         await updateProfile({ avatarUrl });
       }
-      setSuccessMsg('Account created successfully!');
+      setSuccessMsg(`Account created! Username: @${cleanUsername}`);
       setTimeout(() => onClose(), 600);
     } finally {
       setIsSubmitting(false);
@@ -486,11 +492,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               <h2 className="font-semibold text-slate-100 text-sm tracking-tight flex items-center gap-1.5">
                 <span>{branding.appName}</span>
                 <span className="text-[10px] text-cyan-400 bg-cyan-950/60 border border-cyan-800/50 px-1.5 py-0.2 rounded-md font-mono">
-                  VerifyNow
+                  Mail & Identity
                 </span>
               </h2>
               <p className="text-[11px] text-slate-400">
-                {currentUser ? 'Active Profile & Session' : 'MessageCentral OTP & Web Login'}
+                {currentUser ? 'Active Profile & Session' : 'Mail Login & Web Pair'}
               </p>
             </div>
           </div>
@@ -524,9 +530,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     />
                   )}
                 </div>
-                <div className="text-xs text-slate-400 font-mono">@{currentUser.username}</div>
-                <div className="text-[11px] text-cyan-400 mt-0.5">
-                  {currentUser.phone ? `Phone: ${currentUser.phone}` : currentUser.email || 'Active Account'}
+                <div className="text-xs text-cyan-400 font-mono">@{currentUser.username}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  {currentUser.email || 'Mail Account'}
                 </div>
               </div>
             </div>
@@ -544,8 +550,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 type="button"
                 onClick={() => {
                   logout();
-                  setAuthMode('phone');
-                  setPhoneStep(1);
+                  setAuthMode('email');
                 }}
                 className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800/50 border border-slate-700 text-slate-300 font-medium text-xs transition flex items-center justify-center gap-1.5"
               >
@@ -556,23 +561,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </div>
         ) : (
           <>
-            {/* Tab Switcher: Phone OTP | Email | QR Web | (Admin if authorized) */}
+            {/* Tab Switcher: Mail Login | QR Web | (Admin if authorized) */}
             <div className="px-6 pt-4">
-              <div className={`grid ${isAdminPortal ? 'grid-cols-4' : 'grid-cols-3'} gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs`}>
-                <button
-                  type="button"
-                  onClick={() => handleModeChange('phone')}
-                  className={`flex items-center justify-center gap-1 py-1.5 rounded-lg font-medium transition ${
-                    authMode === 'phone'
-                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">OTP</span>
-                  <span className="sm:hidden">OTP</span>
-                </button>
-
+              <div className={`grid ${isAdminPortal ? 'grid-cols-3' : 'grid-cols-2'} gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs`}>
                 <button
                   type="button"
                   onClick={() => handleModeChange('email')}
@@ -583,7 +574,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5" />
-                  <span>Email</span>
+                  <span>Mail Login</span>
                 </button>
 
                 <button
@@ -639,318 +630,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              {/* ============================================================== */}
-              {/* 1. MESSAGECENTRAL VERIFYNOW PHONE OTP FLOW                      */}
-              {/* ============================================================== */}
-              {authMode === 'phone' && (
-                <div>
-                  {/* Step 1: Phone input */}
-                  {phoneStep === 1 && (
-                    <form onSubmit={handlePhoneSubmit} className="space-y-4">
-                      <div>
-                        <div className="text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
-                          <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>MessageCentral VerifyNow (India & Global)</span>
-                        </div>
-                        <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                          Enter your mobile number to receive an instant OTP verification code.
-                        </p>
-                      </div>
 
-                      {/* Delivery Route Selector: SMS or WhatsApp */}
-                      <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setFlowType('SMS')}
-                          className={`flex-1 py-1 rounded-lg text-center font-medium transition ${
-                            flowType === 'SMS' ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          SMS Route
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFlowType('WHATSAPP')}
-                          className={`flex-1 py-1 rounded-lg text-center font-medium transition ${
-                            flowType === 'WHATSAPP' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          WhatsApp Route
-                        </button>
-                      </div>
-
-                      {/* Country Dropdown & Input */}
-                      <div className="space-y-2">
-                        <label className="text-[11px] text-slate-400 font-medium block">
-                          Country & Dial Code
-                        </label>
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
-                            className="w-full flex items-center justify-between px-3 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-200 hover:border-slate-700 transition"
-                          >
-                            <span className="flex items-center gap-2">
-                              <span>{selectedCountry.flag}</span>
-                              <span className="font-medium">{selectedCountry.name}</span>
-                              <span className="text-cyan-400 font-mono">({selectedCountry.code})</span>
-                            </span>
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                          </button>
-
-                          {countryDropdownOpen && (
-                            <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 max-h-48 overflow-y-auto">
-                              <input
-                                type="text"
-                                placeholder="Search country..."
-                                value={countrySearch}
-                                onChange={(e) => setCountrySearch(e.target.value)}
-                                className="w-full mb-2 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 outline-none focus:border-cyan-500"
-                              />
-                              <div className="space-y-1">
-                                {filteredCountries.map((c) => (
-                                  <button
-                                    key={c.name}
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedCountry(c);
-                                      setCountryDropdownOpen(false);
-                                      setCountrySearch('');
-                                    }}
-                                    className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs hover:bg-slate-800 transition text-slate-300 hover:text-white text-left"
-                                  >
-                                    <span className="flex items-center gap-2">
-                                      <span>{c.flag}</span>
-                                      <span>{c.name}</span>
-                                    </span>
-                                    <span className="text-cyan-400 font-mono text-[11px]">{c.code}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Phone Number Field */}
-                      <div>
-                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                          Mobile Number
-                        </label>
-                        <div className="flex items-center bg-slate-950/80 border border-slate-800 rounded-xl overflow-hidden focus-within:border-cyan-500 transition">
-                          <span className="px-3 py-2 text-cyan-400 font-mono text-xs border-r border-slate-800 select-none">
-                            {selectedCountry.code}
-                          </span>
-                          <input
-                            type="tel"
-                            placeholder={selectedCountry.placeholder}
-                            value={phoneNumber}
-                            onChange={(e) => setPhoneNumber(e.target.value)}
-                            className="w-full px-3 py-2 bg-transparent text-xs text-slate-100 placeholder:text-slate-600 outline-none font-mono"
-                            autoFocus
-                          />
-                        </div>
-                      </div>
-
-                      <div className="pt-2">
-                        <button
-                          type="submit"
-                          disabled={isSubmitting || !phoneNumber.trim()}
-                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
-                        >
-                          {isSubmitting ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <span>Send Verification OTP</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Web QR Portal Link & Helper */}
-                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-500">Need Web Login?</span>
-                        <a
-                          href="/web"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            window.location.href = '/web';
-                          }}
-                          className="text-cyan-400 hover:underline flex items-center gap-1 font-medium"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                          <span>web.aether.xperiserv.in</span>
-                        </a>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* Step 2: 6-digit OTP code entry */}
-                  {phoneStep === 2 && (
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-semibold text-slate-200">
-                            Enter 6-Digit Code
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setError(null);
-                              setPhoneStep(1);
-                            }}
-                            className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
-                          >
-                            <ArrowLeft className="w-3 h-3" />
-                            <span>Change Number</span>
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Dispatched to <span className="font-mono text-cyan-300">{fullPhoneString}</span> via MessageCentral VerifyNow.
-                        </p>
-                      </div>
-
-                      {/* Auto-fill Preview Code helper badge (if available) */}
-                      {previewOtp && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const chars = previewOtp.split('').slice(0, 6);
-                            setOtpDigits(chars);
-                            setError(null);
-                          }}
-                          className="w-full py-1.5 px-3 bg-cyan-950/40 border border-cyan-800/50 hover:bg-cyan-900/40 rounded-xl text-center text-[11px] transition text-cyan-300 flex items-center justify-center gap-1.5"
-                          title="Click to automatically fill code"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Preview OTP: <strong className="font-mono tracking-widest text-white">{previewOtp}</strong> (Tap to auto-fill)</span>
-                        </button>
-                      )}
-
-                      {/* 6 Digit Inputs */}
-                      <div className="flex justify-between gap-1.5 pt-1">
-                        {otpDigits.map((digit, idx) => (
-                          <input
-                            key={idx}
-                            id={`auth-otp-${idx}`}
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={1}
-                            value={digit}
-                            onChange={(e) => handleDigitChange(idx, e.target.value)}
-                            onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                            onPaste={handlePasteOtp}
-                            autoFocus={idx === 0}
-                            className="w-11 h-12 text-center text-base font-mono font-bold bg-slate-950 border border-slate-800 rounded-xl text-slate-100 outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/30 transition"
-                          />
-                        ))}
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] pt-1">
-                        <span className="text-slate-500">
-                          {canResend ? 'Did not receive code?' : `Resend code in 00:${countdown < 10 ? `0${countdown}` : countdown}`}
-                        </span>
-                        {canResend && (
-                          <button
-                            type="button"
-                            onClick={handlePhoneSubmit}
-                            className="text-cyan-400 hover:underline font-semibold"
-                          >
-                            Resend OTP
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtp}
-                          disabled={isSubmitting || otpDigits.some((d) => !d)}
-                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
-                        >
-                          {isSubmitting ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <span>Verify with MessageCentral</span>
-                              <Check className="w-3.5 h-3.5" />
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: Complete profile */}
-                  {phoneStep === 3 && (
-                    <form onSubmit={handleFinishProfile} className="space-y-4">
-                      <div>
-                        <div className="text-xs font-semibold text-slate-200 mb-1">
-                          Complete Your Profile
-                        </div>
-                        <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                          Upload a photo, snap one with your camera, or pick an avatar preset.
-                        </p>
-                      </div>
-
-                      {/* Photo Studio Integration */}
-                      <div className="flex items-center gap-3.5 p-3.5 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                        <div className="relative w-16 h-16 rounded-full bg-slate-900 border-2 border-cyan-500/40 overflow-hidden flex items-center justify-center shrink-0 shadow">
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                          ) : (
-                            <User className="w-7 h-7 text-slate-600" />
-                          )}
-                        </div>
-                        <div className="space-y-1.5 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => setPhotoUploaderOpen(true)}
-                            className="px-3 py-1.5 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-800/60 text-cyan-300 text-xs rounded-xl transition flex items-center gap-1.5 font-semibold"
-                          >
-                            <Camera className="w-3.5 h-3.5 text-cyan-400" />
-                            <span>{avatarUrl ? 'Change Photo' : 'Upload or Take Photo'}</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] text-slate-400 font-medium block mb-1">
-                          Display Name
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Your full name"
-                          value={profileName}
-                          onChange={(e) => setProfileName(e.target.value)}
-                          className="w-full px-3 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-cyan-500"
-                          autoFocus
-                          required
-                        />
-                      </div>
-
-                      <div className="pt-2">
-                        <button
-                          type="submit"
-                          disabled={isSubmitting || !profileName.trim()}
-                          className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition shadow-sm flex items-center justify-center gap-2"
-                        >
-                          {isSubmitting ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <>
-                              <span>Enter Aether</span>
-                              <Check className="w-3.5 h-3.5" />
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              )}
 
               {/* ============================================================== */}
               {/* 2. EMAIL & PASSWORD FLOW                                        */}
@@ -981,10 +661,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                   {emailTab === 'signin' ? (
                     <form onSubmit={handleEmailSignIn} className="space-y-3">
                       <div>
-                        <label className="text-[11px] text-slate-400 font-medium block mb-1">Email Address</label>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">Email or Username</label>
                         <input
-                          type="email"
-                          placeholder="user@example.com"
+                          type="text"
+                          placeholder="user@example.com or @username"
                           value={emailInput}
                           onChange={(e) => setEmailInput(e.target.value)}
                           className="w-full px-3 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-cyan-500"
@@ -1027,12 +707,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         <label className="text-[11px] text-slate-400 font-medium block mb-1">Full Name</label>
                         <input
                           type="text"
-                          placeholder="Your Name"
+                          placeholder="Your Display Name"
                           value={emailDisplayName}
                           onChange={(e) => setEmailDisplayName(e.target.value)}
                           className="w-full px-3 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-cyan-500"
                           required
                         />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] text-slate-400 font-medium block mb-1">Username (for search & tags)</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-400 font-mono text-xs">@</span>
+                          <input
+                            type="text"
+                            placeholder="username"
+                            value={customUsername}
+                            onChange={(e) => setCustomUsername(e.target.value)}
+                            className="w-full pl-7 pr-3 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder:text-slate-600 outline-none focus:border-cyan-500 font-mono"
+                          />
+                        </div>
                       </div>
 
                       <div>

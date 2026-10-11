@@ -132,6 +132,19 @@ export interface Message {
   deliveredTo?: { userId: string; deliveredAt: string }[];
 }
 
+export interface ScheduledMessage {
+  id: string;
+  chatId: string;
+  senderId: string;
+  sender?: UserProfile;
+  text?: string;
+  attachments?: Attachment[];
+  replyTo?: MessageReplySnippet;
+  scheduledFor: string;
+  status: 'pending' | 'sent' | 'cancelled';
+  createdAt: string;
+}
+
 export interface Chat {
   id: string;
   type: ChatType;

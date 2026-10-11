@@ -3,26 +3,39 @@ import { useAuth } from './AuthContext.js';
 import {
   Chat,
   Message,
+  ScheduledMessage,
   Attachment,
   MessageReplySnippet,
   Community,
   CallSession
 } from '../types/index.js';
+import { encryptText, decryptText } from '../lib/e2ee.js';
 
 interface ChatContextType {
   chats: Chat[];
   activeChat: Chat | null;
   setActiveChat: (chat: Chat | null) => void;
   messages: Message[];
+  scheduledMessages: ScheduledMessage[];
   isLoadingMessages: boolean;
   isWsConnected: boolean;
   sendMessage: (text: string, attachments?: Attachment[], replyTo?: MessageReplySnippet) => Promise<void>;
+  scheduleMessage: (
+    chatId: string,
+    text: string,
+    scheduledFor: string,
+    attachments?: Attachment[],
+    replyTo?: MessageReplySnippet
+  ) => Promise<ScheduledMessage | null>;
+  fetchScheduledMessages: (chatId: string) => Promise<void>;
+  cancelScheduledMessage: (chatId: string, scheduledId: string) => Promise<void>;
+  sendScheduledMessageNow: (chatId: string, scheduledId: string) => Promise<void>;
   editMessage: (messageId: string, newText: string) => Promise<void>;
   deleteMessage: (messageId: string, forEveryone: boolean) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => Promise<void>;
   togglePin: (messageId: string) => Promise<void>;
   toggleStar: (messageId: string) => Promise<void>;
-  sendTyping: (isTyping: boolean) => void;
+  sendTyping: (isTyping: boolean, targetChatId?: string) => void;
   typingUsers: Record<string, string[]>;
   createDirectChat: (targetUserId: string) => Promise<Chat>;
   createGroupChat: (name: string, description: string, memberUserIds: string[]) => Promise<Chat>;
@@ -82,6 +95,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return [];
   });
 
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -93,6 +108,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const activeChatRef = useRef<Chat | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const callTimerRef = useRef<any[]>([]);
+  const typingTimeoutsRef = useRef<Map<string, any>>(new Map());
 
   const clearCallTimers = () => {
     callTimerRef.current.forEach((t) => clearTimeout(t));
@@ -178,53 +194,78 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             switch (type) {
               case 'new_message': {
-                const newMsg: Message = payload;
+                const rawMsg: Message = payload;
                 const currentActive = activeChatRef.current;
 
-                // If currently inside the message's chat, append to messages view
-                if (currentActive && newMsg.chatId === currentActive.id) {
-                  setMessages((prev) => {
-                    // Replace temporary optimistic message if matches
-                    const filtered = prev.filter(
-                      (m) => m.id !== newMsg.id && !(m.status === 'sending' && m.text === newMsg.text)
-                    );
-                    return [...filtered, newMsg];
-                  });
-
-                  // If message is from recipient, mark as read immediately since recipient is actively viewing this chat
-                  if (currentUser && newMsg.senderId !== currentUser.id) {
-                    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                      wsRef.current.send(
-                        JSON.stringify({
-                          type: 'mark_read',
-                          payload: {
-                            chatId: currentActive.id,
-                            messageIds: [newMsg.id],
-                          },
-                        })
-                      );
-                    }
-                    fetch(`/api/chats/${currentActive.id}/read`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
-                      body: JSON.stringify({ messageIds: [newMsg.id] }),
-                    }).catch(() => {});
+                // Decrypt message text if encrypted
+                (async () => {
+                  let textToUse = rawMsg.text || '';
+                  if (textToUse.startsWith('e2ee:v1:')) {
+                    textToUse = await decryptText(textToUse, rawMsg.chatId);
                   }
-                }
+                  const newMsg: Message = { ...rawMsg, text: textToUse };
 
-                // Update chat in sidebar list with new last message and unread count
-                setChats((prev) =>
-                  prev.map((c) =>
-                    c.id === newMsg.chatId
-                      ? {
-                          ...c,
-                          lastMessage: newMsg,
-                          unreadCount:
-                            currentActive?.id === newMsg.chatId ? 0 : (c.unreadCount || 0) + 1,
-                        }
-                      : c
-                  )
-                );
+                  // Immediately clear typing status for the message author in this chat
+                  if (newMsg.chatId && newMsg.senderId) {
+                    const timerKey = `${newMsg.chatId}:${newMsg.senderId}`;
+                    if (typingTimeoutsRef.current.has(timerKey)) {
+                      clearTimeout(typingTimeoutsRef.current.get(timerKey));
+                      typingTimeoutsRef.current.delete(timerKey);
+                    }
+                    setTypingUsers((prev) => {
+                      const currentList = prev[newMsg.chatId] || [];
+                      if (!currentList.includes(newMsg.senderId)) return prev;
+                      return {
+                        ...prev,
+                        [newMsg.chatId]: currentList.filter((id) => id !== newMsg.senderId),
+                      };
+                    });
+                  }
+
+                  // If currently inside the message's chat, append to messages view
+                  if (currentActive && newMsg.chatId === currentActive.id) {
+                    setMessages((prev) => {
+                      const filtered = prev.filter(
+                        (m) => m.id !== newMsg.id && !(m.status === 'sending' && m.text === newMsg.text)
+                      );
+                      return [...filtered, newMsg];
+                    });
+
+                    // If message is from recipient, mark as read immediately since recipient is actively viewing this chat
+                    if (currentUser && newMsg.senderId !== currentUser.id) {
+                      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                        wsRef.current.send(
+                          JSON.stringify({
+                            type: 'mark_read',
+                            payload: {
+                              chatId: currentActive.id,
+                              messageIds: [newMsg.id],
+                            },
+                          })
+                        );
+                      }
+                      fetch(`/api/chats/${currentActive.id}/read`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+                        body: JSON.stringify({ messageIds: [newMsg.id] }),
+                      }).catch(() => {});
+                    }
+                  }
+
+                  // Update chat in sidebar list with new last message and unread count
+                  setChats((prev) =>
+                    prev.map((c) =>
+                      c.id === newMsg.chatId
+                        ? {
+                            ...c,
+                            lastMessage: newMsg,
+                            unreadCount:
+                              currentActive?.id === newMsg.chatId ? 0 : (c.unreadCount || 0) + 1,
+                          }
+                        : c
+                    )
+                  );
+                })();
                 break;
               }
 
@@ -305,21 +346,92 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 break;
               }
 
+              case 'scheduled_message_created': {
+                const item = payload;
+                const currentActive = activeChatRef.current;
+                if (currentActive && item.chatId === currentActive.id) {
+                  (async () => {
+                    let decText = item.text || '';
+                    if (decText.startsWith('e2ee:v1:')) {
+                      decText = await decryptText(decText, item.chatId);
+                    }
+                    setScheduledMessages((prev) => [...prev.filter((s) => s.id !== item.id), { ...item, text: decText }]);
+                  })();
+                }
+                break;
+              }
+
+              case 'scheduled_message_cancelled': {
+                const { scheduledId } = payload;
+                setScheduledMessages((prev) => prev.filter((s) => s.id !== scheduledId));
+                break;
+              }
+
+              case 'scheduled_message_sent': {
+                const { scheduledId } = payload;
+                setScheduledMessages((prev) => prev.filter((s) => s.id !== scheduledId));
+                break;
+              }
+
               case 'typing_indicator': {
                 const { chatId, userId, isTyping } = payload;
-                if (userId === currentUser.id) return;
-                setTypingUsers((prev) => {
-                  const currentList = prev[chatId] || [];
-                  const updated = isTyping
-                    ? Array.from(new Set([...currentList, userId]))
-                    : currentList.filter((id) => id !== userId);
-                  return { ...prev, [chatId]: updated };
-                });
+                if (!chatId || !userId) return;
+                if (currentUser && userId === currentUser.id) return;
+
+                const timerKey = `${chatId}:${userId}`;
+                if (typingTimeoutsRef.current.has(timerKey)) {
+                  clearTimeout(typingTimeoutsRef.current.get(timerKey));
+                  typingTimeoutsRef.current.delete(timerKey);
+                }
+
+                if (isTyping) {
+                  // Set auto-expiry timer of 3.5 seconds
+                  const timeout = setTimeout(() => {
+                    setTypingUsers((prev) => {
+                      const list = prev[chatId] || [];
+                      if (!list.includes(userId)) return prev;
+                      return {
+                        ...prev,
+                        [chatId]: list.filter((id) => id !== userId),
+                      };
+                    });
+                    typingTimeoutsRef.current.delete(timerKey);
+                  }, 3500);
+                  typingTimeoutsRef.current.set(timerKey, timeout);
+
+                  setTypingUsers((prev) => {
+                    const currentList = prev[chatId] || [];
+                    if (currentList.includes(userId)) return prev;
+                    return { ...prev, [chatId]: [...currentList, userId] };
+                  });
+                } else {
+                  setTypingUsers((prev) => {
+                    const currentList = prev[chatId] || [];
+                    if (!currentList.includes(userId)) return prev;
+                    return { ...prev, [chatId]: currentList.filter((id) => id !== userId) };
+                  });
+                }
                 break;
               }
 
               case 'presence_updated': {
                 const { userId, isOnline } = payload;
+                // If remote user goes offline, immediately clear their typing indicator across all chats
+                if (!isOnline) {
+                  setTypingUsers((prev) => {
+                    let hasChanged = false;
+                    const next: Record<string, string[]> = {};
+                    for (const [cId, list] of Object.entries(prev)) {
+                      if (list.includes(userId)) {
+                        hasChanged = true;
+                        next[cId] = list.filter((id) => id !== userId);
+                      } else {
+                        next[cId] = list;
+                      }
+                    }
+                    return hasChanged ? next : prev;
+                  });
+                }
                 setChats((prev) =>
                   prev.map((c) => ({
                     ...c,
@@ -398,6 +510,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (wsRef.current) {
         wsRef.current.close();
       }
+      for (const timeout of typingTimeoutsRef.current.values()) {
+        clearTimeout(timeout);
+      }
+      typingTimeoutsRef.current.clear();
     };
   }, [currentUser?.id]);
 
@@ -485,11 +601,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       headers: { 'x-user-id': currentUser.id },
     })
       .then((res) => res.json())
-      .then((data) => {
-        if (data.messages) {
-          setMessages(data.messages);
+      .then(async (data) => {
+        if (data.messages && Array.isArray(data.messages)) {
+          // Decrypt encrypted messages for display
+          const decryptedList = await Promise.all(
+            data.messages.map(async (m: Message) => {
+              if (m.text && m.text.startsWith('e2ee:v1:')) {
+                const dec = await decryptText(m.text, m.chatId);
+                return { ...m, text: dec };
+              }
+              return m;
+            })
+          );
+
+          setMessages(decryptedList);
           try {
-            localStorage.setItem(`aether_cached_msgs_${activeChat.id}`, JSON.stringify(data.messages));
+            localStorage.setItem(`aether_cached_msgs_${activeChat.id}`, JSON.stringify(decryptedList));
           } catch {}
           // Mark messages as read via WebSocket
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -498,7 +625,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 type: 'mark_read',
                 payload: {
                   chatId: activeChat.id,
-                  messageIds: data.messages.map((m: Message) => m.id),
+                  messageIds: decryptedList.map((m: Message) => m.id),
                 },
               })
             );
@@ -506,9 +633,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       })
       .catch((e) => console.error('Failed to load messages:', e));
+
+    fetchScheduledMessages(activeChat.id);
   }, [activeChat?.id, currentUser?.id]);
 
-  // High-Speed Optimistic Message Dispatch
+  // High-Speed Optimistic Message Dispatch with E2EE Client-Side Encryption
   const sendMessage = async (text: string, attachments?: Attachment[], replyTo?: MessageReplySnippet) => {
     if (!currentUser || !activeChat) return;
 
@@ -529,7 +658,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createdAt: now,
     };
 
-    // 1. Instantly append message to view
+    // 1. Instantly append message to view locally (unencrypted plaintext for immediate author UI rendering)
     setMessages((prev) => [...prev, optimisticMessage]);
 
     // 2. Update sidebar chat item immediately
@@ -538,6 +667,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     try {
+      // 3. Encrypt text client-side with AES-256-GCM before transmitting
+      const encryptedText = text ? await encryptText(text, activeChat.id) : '';
+
       const res = await fetch(`/api/chats/${activeChat.id}/messages`, {
         method: 'POST',
         headers: {
@@ -545,7 +677,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'x-user-id': currentUser.id,
         },
         body: JSON.stringify({
-          text,
+          text: encryptedText,
           attachments,
           replyTo,
         }),
@@ -553,12 +685,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const data = await res.json();
       if (data.message) {
-        // Replace optimistic message with server-confirmed message
+        const confirmedMsg = { ...data.message, text: text || data.message.text };
+        // Replace optimistic message with confirmed server response
         setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? data.message : m))
+          prev.map((m) => (m.id === tempId ? confirmedMsg : m))
         );
         setChats((prev) =>
-          prev.map((c) => (c.id === activeChat.id ? { ...c, lastMessage: data.message } : c))
+          prev.map((c) => (c.id === activeChat.id ? { ...c, lastMessage: confirmedMsg } : c))
         );
       }
     } catch (err) {
@@ -650,13 +783,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
-  const sendTyping = (isTyping: boolean) => {
-    if (!activeChat || !currentUser || !wsRef.current) return;
+  const sendTyping = (isTyping: boolean, targetChatId?: string) => {
+    const chatId = targetChatId || activeChatRef.current?.id;
+    if (!chatId || !currentUser || !wsRef.current) return;
     if (wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
         JSON.stringify({
           type: isTyping ? 'typing_start' : 'typing_stop',
-          payload: { chatId: activeChat.id },
+          payload: { chatId },
         })
       );
     }
@@ -874,6 +1008,101 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCall(null);
   };
 
+  const fetchScheduledMessages = async (chatId: string) => {
+    if (!currentUser || !chatId) return;
+    try {
+      const res = await fetch(`/api/chats/${chatId}/scheduled-messages`, {
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.scheduledMessages && Array.isArray(data.scheduledMessages)) {
+          const decryptedList = await Promise.all(
+            data.scheduledMessages.map(async (m: ScheduledMessage) => {
+              if (m.text && m.text.startsWith('e2ee:v1:')) {
+                const dec = await decryptText(m.text, m.chatId);
+                return { ...m, text: dec };
+              }
+              return m;
+            })
+          );
+          setScheduledMessages(decryptedList);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch scheduled messages:', e);
+    }
+  };
+
+  const scheduleMessage = async (
+    chatId: string,
+    text: string,
+    scheduledFor: string,
+    attachments?: Attachment[],
+    replyTo?: MessageReplySnippet
+  ): Promise<ScheduledMessage | null> => {
+    if (!currentUser) return null;
+    try {
+      const encryptedText = text ? await encryptText(text, chatId) : '';
+      const res = await fetch(`/api/chats/${chatId}/scheduled-messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({
+          text: encryptedText,
+          attachments,
+          replyTo,
+          scheduledFor,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to schedule message');
+      }
+      if (data.scheduledMessage) {
+        const decryptedMsg = { ...data.scheduledMessage, text: text || data.scheduledMessage.text };
+        setScheduledMessages((prev) => [...prev.filter((m) => m.id !== decryptedMsg.id), decryptedMsg]);
+        return decryptedMsg;
+      }
+    } catch (e: any) {
+      console.error('Schedule message error:', e);
+      throw e;
+    }
+    return null;
+  };
+
+  const cancelScheduledMessage = async (chatId: string, scheduledId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`/api/chats/${chatId}/scheduled-messages/${scheduledId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (res.ok) {
+        setScheduledMessages((prev) => prev.filter((m) => m.id !== scheduledId));
+      }
+    } catch (e) {
+      console.error('Failed to cancel scheduled message:', e);
+    }
+  };
+
+  const sendScheduledMessageNow = async (chatId: string, scheduledId: string) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(`/api/chats/${chatId}/scheduled-messages/${scheduledId}/send-now`, {
+        method: 'POST',
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (res.ok) {
+        setScheduledMessages((prev) => prev.filter((m) => m.id !== scheduledId));
+      }
+    } catch (e) {
+      console.error('Failed to send scheduled message now:', e);
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -881,9 +1110,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activeChat,
         setActiveChat,
         messages,
+        scheduledMessages,
         isLoadingMessages,
         isWsConnected,
         sendMessage,
+        scheduleMessage,
+        fetchScheduledMessages,
+        cancelScheduledMessage,
+        sendScheduledMessageNow,
         editMessage,
         deleteMessage,
         toggleReaction,

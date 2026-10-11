@@ -139,6 +139,22 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed max-w-xs">{about}</p>
 
+          {/* End-to-End Encryption Security Card */}
+          <div className="w-full mt-2 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-left space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-cyan-300">
+                <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                <span>End-to-End Encrypted</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">
+                AES-256-GCM
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Messages and voice recordings in this chat are end-to-end encrypted client-side using WebCrypto hardware key isolation.
+            </p>
+          </div>
+
           {/* Official Verification Credentials Card */}
           {partnerProfile?.verificationStatus === 'verified' && (
             <div className="w-full mt-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-left space-y-2">

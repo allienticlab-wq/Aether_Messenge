@@ -20,6 +20,7 @@ import { WebQrLoginView } from './components/web/WebQrLoginView.js';
 import { QrScannerModal } from './components/modals/QrScannerModal.js';
 import { ReportModal } from './components/modals/ReportModal.js';
 import { LegalModal } from './components/modals/LegalModal.js';
+import { E2EESafetyModal } from './components/modals/E2EESafetyModal.js';
 import { MobileNavBar } from './components/mobile/MobileNavBar.js';
 import { Message } from './types/index.js';
 import {
@@ -56,6 +57,7 @@ function MessengerApp() {
     setInfoDrawerOpen,
     chats,
     isWsConnected,
+    typingUsers,
   } = useChat();
 
   // Dedicated route detection:
@@ -111,6 +113,7 @@ function MessengerApp() {
   const [qrScannerModalOpen, setQrScannerModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [e2eeModalOpen, setE2eeModalOpen] = useState(false);
 
   // Message reply state
   const [replyMessage, setReplyMessage] = useState<Message | null>(null);
@@ -407,10 +410,15 @@ function MessengerApp() {
                   {/* Messages Stream */}
                   <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-2">
                     <div className="flex justify-center my-2">
-                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 backdrop-blur-md">
-                        <Shield className="w-3 h-3 text-cyan-400" />
-                        <span>Protected in transit (TLS 1.3) & at rest (AES-256) &bull; Non-E2EE</span>
-                      </div>
+                      <button
+                        onClick={() => setE2eeModalOpen(true)}
+                        className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 text-[11px] text-cyan-300 backdrop-blur-md transition cursor-pointer shadow-sm group"
+                        title="Click to verify E2EE Safety Numbers"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition" />
+                        <span className="font-medium">🔒 End-to-End Encrypted (AES-256-GCM)</span>
+                        <span className="text-[10px] text-slate-500 hidden sm:inline">&bull; Hardware Key Isolation</span>
+                      </button>
                     </div>
 
                     {isLoadingMessages ? (
@@ -434,6 +442,29 @@ function MessengerApp() {
                         />
                       ))
                     )}
+
+                    {/* Real-time typing indicator pill in active chat view */}
+                    {activeChat && (typingUsers[activeChat.id] || []).filter((id) => id !== currentUser?.id).length > 0 && (
+                      <div className="flex items-center gap-2 py-1 px-3 w-fit rounded-full bg-slate-900/90 border border-slate-800 text-xs text-slate-300 shadow-sm backdrop-blur-md animate-fadeIn">
+                        <span className="text-cyan-400 font-medium text-[11px]">
+                          {(() => {
+                            const otherIds = (typingUsers[activeChat.id] || []).filter((id) => id !== currentUser?.id);
+                            if (activeChat.type === 'direct') {
+                              const partner = activeChat.members.find((m) => m.userId !== currentUser?.id)?.user;
+                              return partner?.displayName ? `${partner.displayName} is typing` : 'typing';
+                            }
+                            const names = otherIds.map((id) => activeChat.members.find((m) => m.userId === id)?.user?.displayName || 'Member');
+                            return names.length === 1 ? `${names[0]} is typing` : `${names[0]} and others are typing`;
+                          })()}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 shrink-0" aria-hidden="true">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-typing-dot-1" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-typing-dot-2" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-typing-dot-3" />
+                        </span>
+                      </div>
+                    )}
+
                     <div ref={messagesEndRef} />
                   </div>
 
@@ -576,6 +607,14 @@ function MessengerApp() {
       />
       <ReportModal isOpen={reportModalOpen} onClose={() => setReportModalOpen(false)} />
       <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} />
+      {activeChat && (
+        <E2EESafetyModal
+          isOpen={e2eeModalOpen}
+          onClose={() => setE2eeModalOpen(false)}
+          chatId={activeChat.id}
+          chatName={activeChat.name || 'Current Conversation'}
+        />
+      )}
     </div>
   );
 }

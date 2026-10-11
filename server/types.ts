@@ -3,6 +3,7 @@ import {
   UserSession,
   Chat,
   Message,
+  ScheduledMessage,
   Community,
   VerificationRequest,
   ModerationReport,
@@ -46,6 +47,7 @@ export interface ServerState {
   sessions: Map<string, UserSession>;
   chats: Map<string, Chat>;
   messages: Map<string, Message>;
+  scheduledMessages: Map<string, ScheduledMessage>;
   communities: Map<string, Community>;
   verificationRequests: Map<string, VerificationRequest>;
   verificationHistory: {

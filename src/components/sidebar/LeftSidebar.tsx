@@ -46,7 +46,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenLegal,
   onOpenQrScanner,
 }) => {
-  const { chats, activeChat, setActiveChat, communities } = useChat();
+  const { chats, activeChat, setActiveChat, communities, typingUsers } = useChat();
   const { currentUser, logout, updateProfile } = useAuth();
   const { branding } = useBranding();
 
@@ -108,8 +108,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           <div>
             <span className="font-bold text-slate-100 text-sm tracking-tight">{branding.appName}</span>
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-cyan-400 font-medium">Verified Relay</span>
-              <span className="text-[9px] text-slate-500">&bull; non-E2EE</span>
+              <span className="text-[10px] text-cyan-400 font-semibold flex items-center gap-1">
+                <span>🔒 E2EE Active</span>
+              </span>
+              <span className="text-[9px] text-slate-500">&bull; AES-256-GCM</span>
             </div>
           </div>
         </div>
@@ -265,6 +267,8 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             const verificationStatus = isDirect ? partner?.verificationStatus : undefined;
             const verificationCategory = isDirect ? partner?.verificationCategory : undefined;
 
+            const isTypingInChat = (typingUsers[chat.id] || []).filter((id) => id !== currentUser?.id).length > 0;
+
             return (
               <div
                 key={chat.id}
@@ -280,11 +284,21 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   <img
                     src={avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'}
                     alt={name}
-                    className="w-11 h-11 rounded-full object-cover border border-slate-800"
+                    className={`w-11 h-11 rounded-full object-cover border transition ${
+                      isTypingInChat ? 'border-cyan-400 ring-2 ring-cyan-500/30' : 'border-slate-800'
+                    }`}
                   />
-                  {isOnline && (
+                  {isTypingInChat ? (
+                    <span className="absolute bottom-0 right-0 px-1 py-0.5 rounded-full bg-cyan-500 text-slate-950 border-2 border-slate-950 shadow-sm">
+                      <span className="flex items-center gap-0.5 px-0.5">
+                        <span className="w-0.5 h-0.5 rounded-full bg-slate-950 animate-typing-dot-1" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-slate-950 animate-typing-dot-2" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-slate-950 animate-typing-dot-3" />
+                      </span>
+                    </span>
+                  ) : isOnline ? (
                     <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 border-slate-950" />
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Center Content */}
@@ -308,17 +322,28 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-slate-400 truncate pr-2">
-                      {chat.lastMessage ? (
-                        chat.lastMessage.attachments && chat.lastMessage.attachments.length > 0 ? (
-                          `📎 ${chat.lastMessage.attachments[0].type.toUpperCase()}`
+                    {isTypingInChat ? (
+                      <p className="text-[11px] text-cyan-400 truncate pr-2 flex items-center gap-1 font-medium">
+                        <span>typing</span>
+                        <span className="inline-flex items-center gap-0.5 shrink-0" aria-hidden="true">
+                          <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-1" />
+                          <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-2" />
+                          <span className="w-1 h-1 rounded-full bg-cyan-400 animate-typing-dot-3" />
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 truncate pr-2">
+                        {chat.lastMessage ? (
+                          chat.lastMessage.attachments && chat.lastMessage.attachments.length > 0 ? (
+                            `📎 ${chat.lastMessage.attachments[0].type.toUpperCase()}`
+                          ) : (
+                            chat.lastMessage.text
+                          )
                         ) : (
-                          chat.lastMessage.text
-                        )
-                      ) : (
-                        'No messages yet'
-                      )}
-                    </p>
+                          'No messages yet'
+                        )}
+                      </p>
+                    )}
 
                     {/* Unread Counter Badge */}
                     {chat.unreadCount > 0 && (
