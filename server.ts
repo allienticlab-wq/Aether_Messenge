@@ -26,6 +26,15 @@ async function bootstrap() {
   // Mount API endpoints
   app.use('/api', apiRouter);
 
+  // Serve Android Digital Asset Links & Manifest directly
+  app.get('/.well-known/assetlinks.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.sendFile(path.resolve(__dirname, 'public/.well-known/assetlinks.json'));
+  });
+
+  // Serve static downloads (e.g. pre-packaged Android Studio project zip)
+  app.use('/downloads', express.static(path.resolve(__dirname, 'public/downloads')));
+
   // Initialize WebSockets on HTTP server
   wsManager.initialize(server);
 

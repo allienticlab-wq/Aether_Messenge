@@ -16,25 +16,37 @@ import {
   Check,
   Shield,
   Smartphone,
-  Laptop,
-  AlertCircle,
+  Phone,
   CheckCircle2,
+  AlertCircle,
   X,
   Sparkles,
-  KeyRound,
   ExternalLink
 } from 'lucide-react';
 
 interface UnifiedAuthViewProps {
   mode?: 'fullscreen' | 'modal';
   onClose?: () => void;
-  defaultTab?: 'otp' | 'password' | 'signup' | 'qr';
+  defaultTab?: 'phone' | 'otp' | 'password' | 'signup' | 'qr';
 }
+
+const COUNTRY_CODES = [
+  { code: '+91', country: 'IN', label: 'India (+91)' },
+  { code: '+1', country: 'US', label: 'United States (+1)' },
+  { code: '+44', country: 'GB', label: 'United Kingdom (+44)' },
+  { code: '+971', country: 'AE', label: 'UAE (+971)' },
+  { code: '+65', country: 'SG', label: 'Singapore (+65)' },
+  { code: '+61', country: 'AU', label: 'Australia (+61)' },
+  { code: '+49', country: 'DE', label: 'Germany (+49)' },
+  { code: '+33', country: 'FR', label: 'France (+33)' },
+  { code: '+81', country: 'JP', label: 'Japan (+81)' },
+  { code: '+86', country: 'CN', label: 'China (+86)' },
+];
 
 export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   mode = 'fullscreen',
   onClose,
-  defaultTab = 'otp',
+  defaultTab = 'phone',
 }) => {
   const {
     login,
@@ -42,21 +54,30 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     verifyEmailLoginOtp,
     requestEmailSignupOtp,
     verifyEmailSignupOtp,
+    requestPhoneOtp,
+    verifyPhoneOtp,
     generateQrSession,
     checkQrStatus,
-    authorizeQrSession,
   } = useAuth();
-  const { branding, theme, setTheme } = useBranding();
+  const { branding } = useBranding();
 
-  // Active form tab: 'otp' | 'password' | 'signup' | 'qr'
-  const [activeTab, setActiveTab] = useState<'otp' | 'password' | 'signup' | 'qr'>(defaultTab);
+  // Active form tab: 'phone' | 'otp' | 'password' | 'signup' | 'qr'
+  const [activeTab, setActiveTab] = useState<'phone' | 'otp' | 'password' | 'signup' | 'qr'>(defaultTab);
+
+  // Phone Login States (WhatsApp signature pattern)
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneStep, setPhoneStep] = useState<1 | 2>(1);
+  const [phoneOtpDigits, setPhoneOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [phoneVerificationId, setPhoneVerificationId] = useState<string>('');
+  const [phoneCountdown, setPhoneCountdown] = useState(60);
+  const [canResendPhoneOtp, setCanResendPhoneOtp] = useState(false);
 
   // Email OTP Login States
   const [otpStep, setOtpStep] = useState<1 | 2>(1);
   const [otpIdentifier, setOtpIdentifier] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [maskedEmail, setMaskedEmail] = useState('');
-  const [previewOtp, setPreviewOtp] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(60);
   const [canResendOtp, setCanResendOtp] = useState(false);
 
@@ -74,30 +95,44 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   const [signupPassword, setSignupPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [signupOtpDigits, setSignupOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [signupPreviewOtp, setSignupPreviewOtp] = useState('');
   const [signupCountdown, setSignupCountdown] = useState(60);
   const [canResendSignupOtp, setCanResendSignupOtp] = useState(false);
 
-  // QR Web Pairing States
+  // QR Web Pairing States (WhatsApp Web Experience)
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [qrSessionId, setQrSessionId] = useState<string>('');
-  const [qrLinkCode, setQrLinkCode] = useState<string>('AE-8492');
-  const [qrExpiresAt, setQrExpiresAt] = useState<number>(0);
+  const [qrLinkCode, setQrLinkCode] = useState<string>('');
   const [qrRemainingSecs, setQrRemainingSecs] = useState<number>(120);
   const [qrIsExpired, setQrIsExpired] = useState<boolean>(false);
   const [qrIsLoading, setQrIsLoading] = useState<boolean>(true);
   const [qrCopied, setQrCopied] = useState<boolean>(false);
   const [qrAuthorizedSuccess, setQrAuthorizedSuccess] = useState<boolean>(false);
-  const [isSimulatingScan, setIsSimulatingScan] = useState<boolean>(false);
 
-  // General feedback
+  // Feedback & Loading
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const pollTimerRef = useRef<any>(null);
 
-  // Countdown timer for Login OTP
+  // Countdown timer for Phone OTP
+  useEffect(() => {
+    let timer: any;
+    if (phoneStep === 2 && phoneCountdown > 0) {
+      timer = setInterval(() => {
+        setPhoneCountdown((prev) => {
+          if (prev <= 1) {
+            setCanResendPhoneOtp(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [phoneStep, phoneCountdown]);
+
+  // Countdown timer for Email Login OTP
   useEffect(() => {
     let timer: any;
     if (otpStep === 2 && otpCountdown > 0) {
@@ -131,34 +166,34 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     return () => clearInterval(timer);
   }, [signupStep, signupCountdown]);
 
-  // ---------------------------------------------------------------------------
-  // QR Code Initialization & Polling
-  // ---------------------------------------------------------------------------
+  // QR Session Initialization
   const initQrSession = async () => {
     setQrIsLoading(true);
     setQrIsExpired(false);
     setQrAuthorizedSuccess(false);
-
     try {
       const data = await generateQrSession();
-      if (data) {
+      if (data && data.sessionId) {
         setQrSessionId(data.sessionId);
-        setQrLinkCode(data.linkCode || 'AE-8492');
-        setQrExpiresAt(data.expiresAt || Date.now() + 120000);
-        setQrRemainingSecs(120);
+        setQrLinkCode(data.linkCode || data.sessionId.substring(0, 8).toUpperCase());
+        const secondsRemaining = Math.max(10, Math.floor((data.expiresAt - Date.now()) / 1000));
+        setQrRemainingSecs(secondsRemaining);
 
-        const qrUrl = await QRCode.toDataURL(data.qrPayload || data.sessionId, {
+        const qrDataUrl = await QRCode.toDataURL(data.qrPayload, {
           width: 320,
-          margin: 2,
+          margin: 1,
           color: {
-            dark: '#0f172a',
+            dark: '#060913',
             light: '#ffffff',
           },
+          errorCorrectionLevel: 'M',
         });
-        setQrCodeDataUrl(qrUrl);
+        setQrCodeDataUrl(qrDataUrl);
+      } else {
+        setErrorMsg('Unable to initialize QR pairing session. Please use phone or email login.');
       }
-    } catch (err) {
-      console.error('Failed to generate QR session:', err);
+    } catch (err: any) {
+      setErrorMsg('Failed to generate pairing QR code.');
     } finally {
       setQrIsLoading(false);
     }
@@ -167,47 +202,55 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   useEffect(() => {
     initQrSession();
     return () => {
-      clearInterval(pollTimerRef.current);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
 
-  // QR expiration countdown
-  useEffect(() => {
-    if (!qrExpiresAt) return;
-    const timer = setInterval(() => {
-      const diff = Math.max(0, Math.round((qrExpiresAt - Date.now()) / 1000));
-      setQrRemainingSecs(diff);
-      if (diff <= 0) {
-        setQrIsExpired(true);
-        clearInterval(timer);
-      }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [qrExpiresAt]);
-
-  // Polling for QR status
+  // QR Expiration countdown & status polling
   useEffect(() => {
     if (!qrSessionId || qrIsExpired || qrAuthorizedSuccess) return;
+
+    const timer = setInterval(() => {
+      setQrRemainingSecs((prev) => {
+        if (prev <= 1) {
+          setQrIsExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [qrSessionId, qrIsExpired, qrAuthorizedSuccess]);
+
+  // Auto-poll QR Session status until paired
+  useEffect(() => {
+    if (!qrSessionId || qrIsExpired || qrAuthorizedSuccess) {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      return;
+    }
 
     const pollStatus = async () => {
       try {
         const res = await checkQrStatus(qrSessionId);
-        if (res.status === 'authorized' && res.user && res.session) {
+        if (res.status === 'authorized') {
           setQrAuthorizedSuccess(true);
-          setSuccessMsg(`Device linked! Welcome, ${res.user.displayName}`);
+          setSuccessMsg('Device linked successfully! Launching your conversations...');
+          clearInterval(pollTimerRef.current);
           setTimeout(() => {
             if (onClose) onClose();
             else window.location.href = '/';
-          }, 700);
+          }, 800);
         } else if (res.status === 'expired') {
           setQrIsExpired(true);
+          clearInterval(pollTimerRef.current);
         }
       } catch {
         // Continue polling
       }
     };
 
-    pollTimerRef.current = setInterval(pollStatus, 1600);
+    pollTimerRef.current = setInterval(pollStatus, 1500);
     return () => clearInterval(pollTimerRef.current);
   }, [qrSessionId, qrIsExpired, qrAuthorizedSuccess]);
 
@@ -218,34 +261,99 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     setTimeout(() => setQrCopied(false), 2000);
   };
 
-  const handleSimulateMobileScan = async () => {
-    if (!qrSessionId) return;
-    setIsSimulatingScan(true);
-    setErrorMsg(null);
-    try {
-      const res = await authorizeQrSession(qrSessionId, 'demo_token');
-      if (res.success) {
-        setQrAuthorizedSuccess(true);
-        setSuccessMsg('QR Code verified! Web Client is now authorized.');
-        setTimeout(() => {
-          if (onClose) onClose();
-          else window.location.href = '/';
-        }, 700);
-      } else {
-        setErrorMsg(res.error || 'Failed to simulate scan.');
-      }
-    } catch {
-      setErrorMsg('Network error authorizing QR code.');
-    } finally {
-      setIsSimulatingScan(false);
-    }
-  };
-
   // ---------------------------------------------------------------------------
   // Action Handlers
   // ---------------------------------------------------------------------------
 
-  // 1. Send Login OTP via Mailgun
+  // 1. Phone OTP Request
+  const handleRequestPhoneOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    if (cleanNumber.length < 7) {
+      setErrorMsg('Please enter a valid phone number');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const cCode = phoneCountryCode.replace('+', '');
+      const res = await requestPhoneOtp(cleanNumber, cCode, 'SMS');
+      if (!res.success) {
+        setErrorMsg(res.error || 'Failed to send phone verification code.');
+        return;
+      }
+
+      if (res.verificationId) setPhoneVerificationId(res.verificationId);
+      setPhoneStep(2);
+      setPhoneCountdown(60);
+      setCanResendPhoneOtp(false);
+      setPhoneOtpDigits(['', '', '', '', '', '']);
+      setSuccessMsg(`Verification code sent to ${phoneCountryCode} ${cleanNumber}`);
+      setTimeout(() => {
+        document.getElementById('phone-otp-box-0')?.focus();
+      }, 100);
+    } catch {
+      setErrorMsg('Network error while requesting phone passcode.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 2. Verify Phone OTP
+  const handleVerifyPhoneOtp = async (overrideDigits?: string[]) => {
+    const code = (overrideDigits || phoneOtpDigits).join('');
+    if (code.length < 6) {
+      setErrorMsg('Please enter the complete 6-digit code');
+      return;
+    }
+
+    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const cCode = phoneCountryCode.replace('+', '');
+      const res = await verifyPhoneOtp(cleanNumber, code, phoneVerificationId, cCode);
+      if (!res.success) {
+        setErrorMsg(res.error || 'Invalid or expired phone verification code.');
+        return;
+      }
+
+      setSuccessMsg('Phone verified successfully! Opening conversations...');
+      setTimeout(() => {
+        if (onClose) onClose();
+        else window.location.href = '/';
+      }, 600);
+    } catch {
+      setErrorMsg('Failed to verify phone code.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Resend Phone OTP
+  const handleResendPhoneOtp = async () => {
+    if (!canResendPhoneOtp || isSubmitting) return;
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const cleanNumber = phoneNumber.replace(/\D/g, '');
+      const cCode = phoneCountryCode.replace('+', '');
+      const res = await requestPhoneOtp(cleanNumber, cCode, 'SMS');
+      if (res.success) {
+        setPhoneCountdown(60);
+        setCanResendPhoneOtp(false);
+        if (res.verificationId) setPhoneVerificationId(res.verificationId);
+        setSuccessMsg('New verification code sent to your phone.');
+      } else {
+        setErrorMsg(res.error || 'Failed to resend phone code.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 3. Email OTP Request
   const handleRequestLoginOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpIdentifier.trim()) {
@@ -258,26 +366,25 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     try {
       const res = await requestEmailLoginOtp(otpIdentifier.trim());
       if (!res.success) {
-        setErrorMsg(res.error || 'Failed to dispatch login OTP code.');
+        setErrorMsg(res.error || 'Failed to send email verification code.');
         return;
       }
 
       setMaskedEmail(res.maskedEmail || otpIdentifier.trim());
-      if (res.previewOtp) setPreviewOtp(res.previewOtp);
       setOtpStep(2);
       setOtpCountdown(60);
       setCanResendOtp(false);
       setOtpDigits(['', '', '', '', '', '']);
-      setSuccessMsg(res.message || 'Verification passcode sent via Mailgun SMTP.');
+      setSuccessMsg(res.message || 'Passcode sent to your email.');
       setTimeout(() => {
-        document.getElementById('login-otp-box-0')?.focus();
+        document.getElementById('email-otp-box-0')?.focus();
       }, 100);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 2. Verify Login OTP
+  // 4. Verify Email OTP
   const handleVerifyLoginOtp = async (overrideDigits?: string[]) => {
     const code = (overrideDigits || otpDigits).join('');
     if (code.length < 6) {
@@ -294,7 +401,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
         return;
       }
 
-      setSuccessMsg('Signed in successfully via Mailgun SMTP!');
+      setSuccessMsg('Signed in successfully!');
       setTimeout(() => {
         if (onClose) onClose();
         else window.location.href = '/';
@@ -304,7 +411,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     }
   };
 
-  // Resend Login OTP
+  // Resend Email OTP
   const handleResendLoginOtp = async () => {
     if (!canResendOtp || isSubmitting) return;
     setIsSubmitting(true);
@@ -314,21 +421,20 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
       if (res.success) {
         setOtpCountdown(60);
         setCanResendOtp(false);
-        if (res.previewOtp) setPreviewOtp(res.previewOtp);
-        setSuccessMsg('New 6-digit passcode sent via Mailgun SMTP.');
+        setSuccessMsg('New 6-digit passcode sent to your email.');
       } else {
-        setErrorMsg(res.error || 'Failed to resend code.');
+        setErrorMsg(res.error || 'Failed to resend email code.');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 3. Password Login
+  // 5. Password Login
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pwdIdentifier.trim() || !pwdValue) {
-      setErrorMsg('Please enter both your identifier and password');
+      setErrorMsg('Please enter your identifier and password');
       return;
     }
 
@@ -337,11 +443,11 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     try {
       const res = await login(pwdIdentifier.trim(), pwdValue);
       if (!res.success) {
-        setErrorMsg(res.error || 'Invalid username or password.');
+        setErrorMsg(res.error || 'Invalid credentials.');
         return;
       }
 
-      setSuccessMsg('Authenticated successfully!');
+      setSuccessMsg('Signed in successfully!');
       setTimeout(() => {
         if (onClose) onClose();
         else window.location.href = '/';
@@ -351,7 +457,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     }
   };
 
-  // 4. Request Signup OTP via Mailgun
+  // 6. Signup Request OTP
   const handleRequestSignupOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signupDisplayName.trim()) {
@@ -376,16 +482,15 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     try {
       const res = await requestEmailSignupOtp(signupEmail.trim(), signupDisplayName.trim());
       if (!res.success) {
-        setErrorMsg(res.error || 'Failed to dispatch registration OTP.');
+        setErrorMsg(res.error || 'Failed to send registration code.');
         return;
       }
 
-      if (res.previewOtp) setSignupPreviewOtp(res.previewOtp);
       setSignupStep(2);
       setSignupCountdown(60);
       setCanResendSignupOtp(false);
       setSignupOtpDigits(['', '', '', '', '', '']);
-      setSuccessMsg(res.message || 'Verification passcode sent to your email via Mailgun SMTP.');
+      setSuccessMsg(res.message || 'Verification passcode sent to your email.');
       setTimeout(() => {
         document.getElementById('signup-otp-box-0')?.focus();
       }, 100);
@@ -394,7 +499,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     }
   };
 
-  // 5. Verify Signup OTP & Create Account
+  // 7. Verify Signup OTP & Create Account
   const handleVerifySignupOtp = async (overrideDigits?: string[]) => {
     const code = (overrideDigits || signupOtpDigits).join('');
     if (code.length < 6) {
@@ -439,8 +544,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
       if (res.success) {
         setSignupCountdown(60);
         setCanResendSignupOtp(false);
-        if (res.previewOtp) setSignupPreviewOtp(res.previewOtp);
-        setSuccessMsg('New registration code sent via Mailgun SMTP.');
+        setSuccessMsg('New registration code sent to your email.');
       } else {
         setErrorMsg(res.error || 'Failed to resend code.');
       }
@@ -449,34 +553,78 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Digit Input Handlers (WhatsApp 6-box input)
-  // ---------------------------------------------------------------------------
-  const handleLoginOtpChange = (index: number, val: string) => {
-    const char = val.replace(/\D/g, '').slice(-1);
-    const updated = [...otpDigits];
-    updated[index] = char;
-    setOtpDigits(updated);
+  // Helper for Phone OTP Digits
+  const handlePhoneOtpChange = (index: number, val: string) => {
+    if (val.length > 1) val = val.slice(-1);
+    if (val && !/^\d$/.test(val)) return;
 
-    if (char && index < 5) {
-      document.getElementById(`login-otp-box-${index + 1}`)?.focus();
+    const updated = [...phoneOtpDigits];
+    updated[index] = val;
+    setPhoneOtpDigits(updated);
+
+    if (val && index < 5) {
+      document.getElementById(`phone-otp-box-${index + 1}`)?.focus();
     }
 
-    if (updated.every((d) => d !== '') && index === 5) {
-      setTimeout(() => handleVerifyLoginOtp(updated), 80);
-    }
-  };
-
-  const handleLoginOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      document.getElementById(`login-otp-box-${index - 1}`)?.focus();
+    if (updated.every((d) => d !== '')) {
+      handleVerifyPhoneOtp(updated);
     }
   };
 
-  const handleLoginOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePhoneOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !phoneOtpDigits[index] && index > 0) {
+      document.getElementById(`phone-otp-box-${index - 1}`)?.focus();
+    }
+  };
+
+  const handlePhoneOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
+
+    const updated = [...phoneOtpDigits];
+    for (let i = 0; i < 6; i++) {
+      updated[i] = pasted[i] || '';
+    }
+    setPhoneOtpDigits(updated);
+
+    const targetIdx = Math.min(pasted.length, 5);
+    document.getElementById(`phone-otp-box-${targetIdx}`)?.focus();
+
+    if (pasted.length === 6) {
+      setTimeout(() => handleVerifyPhoneOtp(updated), 80);
+    }
+  };
+
+  // Helper for Email OTP Digits
+  const handleLoginOtpChange = (index: number, val: string) => {
+    if (val.length > 1) val = val.slice(-1);
+    if (val && !/^\d$/.test(val)) return;
+
+    const updated = [...otpDigits];
+    updated[index] = val;
+    setOtpDigits(updated);
+
+    if (val && index < 5) {
+      document.getElementById(`email-otp-box-${index + 1}`)?.focus();
+    }
+
+    if (updated.every((d) => d !== '')) {
+      handleVerifyLoginOtp(updated);
+    }
+  };
+
+  const handleLoginOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      document.getElementById(`email-otp-box-${index - 1}`)?.focus();
+    }
+  };
+
+  const handleLoginOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+
     const updated = [...otpDigits];
     for (let i = 0; i < 6; i++) {
       updated[i] = pasted[i] || '';
@@ -484,38 +632,42 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     setOtpDigits(updated);
 
     const targetIdx = Math.min(pasted.length, 5);
-    document.getElementById(`login-otp-box-${targetIdx}`)?.focus();
+    document.getElementById(`email-otp-box-${targetIdx}`)?.focus();
 
     if (pasted.length === 6) {
       setTimeout(() => handleVerifyLoginOtp(updated), 80);
     }
   };
 
+  // Helper for Signup OTP Digits
   const handleSignupOtpChange = (index: number, val: string) => {
-    const char = val.replace(/\D/g, '').slice(-1);
+    if (val.length > 1) val = val.slice(-1);
+    if (val && !/^\d$/.test(val)) return;
+
     const updated = [...signupOtpDigits];
-    updated[index] = char;
+    updated[index] = val;
     setSignupOtpDigits(updated);
 
-    if (char && index < 5) {
+    if (val && index < 5) {
       document.getElementById(`signup-otp-box-${index + 1}`)?.focus();
     }
 
-    if (updated.every((d) => d !== '') && index === 5) {
-      setTimeout(() => handleVerifySignupOtp(updated), 80);
+    if (updated.every((d) => d !== '')) {
+      handleVerifySignupOtp(updated);
     }
   };
 
-  const handleSignupOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSignupOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
     if (e.key === 'Backspace' && !signupOtpDigits[index] && index > 0) {
       document.getElementById(`signup-otp-box-${index - 1}`)?.focus();
     }
   };
 
-  const handleSignupOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+  const handleSignupOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (!pasted) return;
+
     const updated = [...signupOtpDigits];
     for (let i = 0; i < 6; i++) {
       updated[i] = pasted[i] || '';
@@ -528,23 +680,6 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     if (pasted.length === 6) {
       setTimeout(() => handleVerifySignupOtp(updated), 80);
     }
-  };
-
-  // Demo Filler for testing
-  const fillAdminDemo = () => {
-    setActiveTab('password');
-    setPwdIdentifier('admin');
-    setPwdValue('adminpassword123');
-    setErrorMsg(null);
-    setSuccessMsg('Filled System Admin credentials (admin / adminpassword123)');
-  };
-
-  const fillAdminEmailOtp = () => {
-    setActiveTab('otp');
-    setOtpIdentifier('swayamsiddhantn@gmail.com');
-    setOtpStep(1);
-    setErrorMsg(null);
-    setSuccessMsg('Filled registered email swayamsiddhantn@gmail.com');
   };
 
   // ---------------------------------------------------------------------------
@@ -560,13 +695,13 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
           : 'min-h-screen w-full bg-[#060913] text-slate-100 flex flex-col select-none relative overflow-x-hidden font-sans'
       }
     >
-      {/* Atmosphere Glow */}
+      {/* Ambient Radial Atmosphere */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[720px] h-[360px] bg-cyan-500/10 blur-[140px] pointer-events-none rounded-full" />
       <div className="absolute bottom-0 right-10 w-[480px] h-[300px] bg-blue-600/10 blur-[120px] pointer-events-none rounded-full" />
 
       {/* Top Header (Fullscreen Mode) */}
       {!isModal && (
-        <header className="h-16 border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md px-6 md:px-12 flex items-center justify-between z-10 shrink-0">
+        <header className="h-16 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md px-6 md:px-12 flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center p-1.5 shadow-sm shadow-cyan-500/20">
               <img src={branding.appLogo} alt="" className="w-full h-full object-contain" />
@@ -574,16 +709,16 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-100 text-sm tracking-tight">{branding.appName}</span>
-                <span className="text-[11px] text-cyan-400 font-mono">Web Portal</span>
+                <span className="text-[11px] text-cyan-400 font-mono font-medium">Web & Mobile</span>
               </div>
-              <p className="text-[11px] text-slate-400">Mailgun SMTP Secured · Real-Time Platform</p>
+              <p className="text-[11px] text-slate-400">Next-Generation Real-Time Platform</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3 text-xs">
             <a
               href="/admin"
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 transition flex items-center gap-1.5 text-xs"
+              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 transition flex items-center gap-1.5 text-xs font-medium"
               title="Open System Admin Operations"
             >
               <Shield className="w-3.5 h-3.5 text-cyan-400" />
@@ -593,7 +728,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
         </header>
       )}
 
-      {/* Main Container Card */}
+      {/* Main Container Card (WhatsApp Web Inspired Split Card) */}
       <div
         className={
           isModal
@@ -605,18 +740,18 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
           className={
             isModal
               ? 'grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-y-auto'
-              : 'w-full max-w-5xl bg-slate-900/80 border border-slate-800/90 rounded-3xl shadow-2xl backdrop-blur-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[560px]'
+              : 'w-full max-w-5xl bg-[#0b1120]/90 border border-slate-800 rounded-3xl shadow-[0_20px_60px_-15px_rgba(6,182,212,0.12)] backdrop-blur-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[580px]'
           }
         >
           {/* =================================================================== */}
-          {/* LEFT COLUMN: AUTHENTICATION ENGINE (Email OTP, Password, Signup)   */}
+          {/* LEFT COLUMN: INTERACTIVE AUTHENTICATION FORM                        */}
           {/* =================================================================== */}
           <div className="lg:col-span-7 p-6 sm:p-8 md:p-10 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-slate-800/80 relative">
-            {/* Modal Close Button if in modal mode */}
+            {/* Modal Close Button */}
             {isModal && onClose && (
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition z-20"
+                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition z-20 cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -626,33 +761,56 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             <div className="space-y-6">
               {/* Header Title Lockup */}
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                    <img src={branding.appLogo} alt="" className="w-4 h-4 object-contain" />
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-sm">
+                    <img src={branding.appLogo} alt="" className="w-5 h-5 object-contain" />
                   </div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-slate-100 tracking-tight">
-                    {activeTab === 'signup'
-                      ? 'Create Aether Account'
-                      : activeTab === 'password'
-                      ? 'Password Sign In'
-                      : activeTab === 'qr'
-                      ? 'Scan QR to Sign In'
-                      : 'Sign in to Aether'}
-                  </h1>
+                  <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-100 tracking-tight">
+                      {activeTab === 'signup'
+                        ? 'Create Your Account'
+                        : activeTab === 'password'
+                        ? 'Password Sign In'
+                        : activeTab === 'qr'
+                        ? 'Link with QR Code'
+                        : activeTab === 'otp'
+                        ? 'Sign In with Email'
+                        : 'Sign In with Phone'}
+                    </h1>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   {activeTab === 'signup'
-                    ? 'Register your account with immediate Mailgun SMTP verification.'
+                    ? 'Register your identity with real-time end-to-end encrypted messaging.'
                     : activeTab === 'password'
-                    ? 'Sign in using your account password or admin credentials.'
+                    ? 'Sign in using your account username and password.'
                     : activeTab === 'qr'
-                    ? 'Point your phone camera to pair your account instantly.'
-                    : 'Passwordless sign in with a 6-digit one-time code sent to your email.'}
+                    ? 'Point your mobile phone camera to link your account instantly.'
+                    : activeTab === 'otp'
+                    ? 'Enter your registered email address to receive a 6-digit passcode.'
+                    : 'Enter your phone number to receive a 6-digit verification code.'}
                 </p>
               </div>
 
-              {/* Mode Switcher Tabs (WhatsApp Segmented Style) */}
-              <div className="flex items-center gap-1 p-1 bg-slate-950/80 border border-slate-800 rounded-xl overflow-x-auto text-xs">
+              {/* Segmented Auth Navigation Tabs (WhatsApp Inspired) */}
+              <div className="flex items-center gap-1 p-1 bg-slate-950/90 border border-slate-800 rounded-xl overflow-x-auto text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('phone');
+                    setErrorMsg(null);
+                    setSuccessMsg(null);
+                  }}
+                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
+                    activeTab === 'phone'
+                      ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                  }`}
+                >
+                  <Phone className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Phone</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -660,14 +818,14 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
                     activeTab === 'otp'
                       ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Email OTP</span>
+                  <span>Email</span>
                 </button>
 
                 <button
@@ -677,7 +835,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
                     activeTab === 'password'
                       ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
@@ -694,17 +852,17 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
                     activeTab === 'signup'
                       ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   }`}
                 >
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>New Account</span>
+                  <span>Sign Up</span>
                 </button>
 
-                {/* QR Tab is also accessible on mobile / smaller viewports */}
+                {/* Mobile-only QR view switcher */}
                 <button
                   type="button"
                   onClick={() => {
@@ -712,58 +870,84 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     setErrorMsg(null);
                     setSuccessMsg(null);
                   }}
-                  className={`lg:hidden flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 ${
+                  className={`lg:hidden flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
                     activeTab === 'qr'
                       ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   }`}
                 >
                   <QrCode className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>QR Scan</span>
+                  <span>QR Pair</span>
                 </button>
               </div>
 
-              {/* Feedback Toasts */}
+              {/* Alert Feedback Messages */}
               {errorMsg && (
-                <div className="p-3 bg-rose-950/50 border border-rose-800/60 rounded-xl text-xs text-rose-300 flex items-center gap-2 animate-fadeIn">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/70 text-rose-300 text-xs flex items-start gap-2 shadow-sm animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
               {successMsg && (
-                <div className="p-3 bg-emerald-950/50 border border-emerald-800/60 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/70 text-emerald-300 text-xs flex items-start gap-2 shadow-sm animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <span>{successMsg}</span>
                 </div>
               )}
 
               {/* ----------------------------------------------------------- */}
-              {/* TAB 1: EMAIL OTP (MAILGUN SMTP)                             */}
+              {/* TAB 1: PHONE NUMBER AUTHENTICATION (WhatsApp Flow)          */}
               {/* ----------------------------------------------------------- */}
-              {activeTab === 'otp' && (
+              {activeTab === 'phone' && (
                 <div>
-                  {otpStep === 1 ? (
-                    <form onSubmit={handleRequestLoginOtp} className="space-y-4">
+                  {phoneStep === 1 ? (
+                    <form onSubmit={handleRequestPhoneOtp} className="space-y-4">
                       <div>
                         <label className="block text-slate-300 text-xs font-medium mb-1.5">
-                          Registered Email Address or Username
+                          Phone Number
                         </label>
-                        <div className="relative">
-                          <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                          <input
-                            type="text"
-                            value={otpIdentifier}
-                            onChange={(e) => setOtpIdentifier(e.target.value)}
-                            placeholder="name@example.com or @handle"
-                            className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-medium"
-                            autoFocus
-                            required
-                          />
+                        <div className="flex gap-2">
+                          <select
+                            value={phoneCountryCode}
+                            onChange={(e) => setPhoneCountryCode(e.target.value)}
+                            className="bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono shrink-0 cursor-pointer"
+                          >
+                            {COUNTRY_CODES.map((c) => (
+                              <option key={c.code} value={c.code} className="bg-slate-900 text-slate-200">
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="relative flex-1">
+                            <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                            <input
+                              type="tel"
+                              value={phoneNumber}
+                              onChange={(e) => setPhoneNumber(e.target.value)}
+                              placeholder="98765 43210"
+                              className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-medium tracking-wide"
+                              autoFocus
+                              required
+                            />
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
-                          <span>A 6-digit one-time passcode will be sent via Mailgun SMTP.</span>
+                        <p className="text-[11px] text-slate-400 mt-1.5">
+                          We will send a 6-digit one-time verification passcode via SMS.
                         </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="checkbox"
+                          id="remember-phone"
+                          checked={rememberDevice}
+                          onChange={(e) => setRememberDevice(e.target.checked)}
+                          className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer accent-cyan-500"
+                        />
+                        <label htmlFor="remember-phone" className="text-xs text-slate-400 cursor-pointer select-none">
+                          Stay logged in on this browser
+                        </label>
                       </div>
 
                       <button
@@ -774,30 +958,162 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         {isSubmitting ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Sending Code via Mailgun...</span>
+                            <span>Sending Code...</span>
                           </>
                         ) : (
                           <>
-                            <span>Send 6-Digit Passcode</span>
+                            <span>Continue</span>
                             <ArrowRight className="w-4 h-4" />
                           </>
                         )}
                       </button>
-
-                      {/* Quick demo helper for tester */}
-                      <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400">
-                        <span>Test Admin Account?</span>
-                        <button
-                          type="button"
-                          onClick={fillAdminEmailOtp}
-                          className="text-cyan-400 hover:underline font-mono"
-                        >
-                          Auto-fill swayamsiddhantn@gmail.com
-                        </button>
-                      </div>
                     </form>
                   ) : (
-                    /* Step 2: 6-Box WhatsApp Style OTP Entry */
+                    /* Step 2: 6-Box OTP Entry */
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-xs text-slate-300 font-medium block">
+                            Enter the 6-digit code sent to:
+                          </span>
+                          <span className="text-xs font-mono text-cyan-300 font-semibold">
+                            {phoneCountryCode} {phoneNumber}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPhoneStep(1);
+                            setErrorMsg(null);
+                          }}
+                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <ArrowLeft className="w-3 h-3" />
+                          <span>Change number</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+                        {phoneOtpDigits.map((digit, idx) => (
+                          <input
+                            key={idx}
+                            id={`phone-otp-box-${idx}`}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handlePhoneOtpChange(idx, e.target.value)}
+                            onKeyDown={(e) => handlePhoneOtpKeyDown(idx, e)}
+                            onPaste={idx === 0 ? handlePhoneOtpPaste : undefined}
+                            className={`w-11 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-mono font-bold rounded-xl border bg-slate-950 transition focus:outline-none ${
+                              digit
+                                ? 'border-cyan-400 text-cyan-300 shadow-sm shadow-cyan-500/20'
+                                : 'border-slate-800 text-slate-100 focus:border-cyan-500'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleVerifyPhoneOtp()}
+                        disabled={isSubmitting || phoneOtpDigits.join('').length < 6}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Verifying Code...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Verify &amp; Continue</span>
+                          </>
+                        )}
+                      </button>
+
+                      <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <span>Didn&apos;t receive code?</span>
+                        {canResendPhoneOtp ? (
+                          <button
+                            type="button"
+                            onClick={handleResendPhoneOtp}
+                            disabled={isSubmitting}
+                            className="text-cyan-400 hover:underline font-semibold cursor-pointer"
+                          >
+                            Resend Code
+                          </button>
+                        ) : (
+                          <span className="font-mono text-slate-500">Resend in {phoneCountdown}s</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ----------------------------------------------------------- */}
+              {/* TAB 2: EMAIL OTP AUTHENTICATION                             */}
+              {/* ----------------------------------------------------------- */}
+              {activeTab === 'otp' && (
+                <div>
+                  {otpStep === 1 ? (
+                    <form onSubmit={handleRequestLoginOtp} className="space-y-4">
+                      <div>
+                        <label className="block text-slate-300 text-xs font-medium mb-1.5">
+                          Email Address or Username
+                        </label>
+                        <div className="relative">
+                          <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                          <input
+                            type="text"
+                            value={otpIdentifier}
+                            onChange={(e) => setOtpIdentifier(e.target.value)}
+                            placeholder="name@example.com or @handle"
+                            className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-medium"
+                            autoFocus
+                            required
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1.5">
+                          A 6-digit one-time passcode will be sent to your email.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="checkbox"
+                          id="remember-email"
+                          checked={rememberDevice}
+                          onChange={(e) => setRememberDevice(e.target.checked)}
+                          className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer accent-cyan-500"
+                        />
+                        <label htmlFor="remember-email" className="text-xs text-slate-400 cursor-pointer select-none">
+                          Stay logged in on this browser
+                        </label>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Sending Code...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Send Passcode</span>
+                            <ArrowRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  ) : (
+                    /* Step 2: 6-Box OTP Entry */
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
@@ -812,19 +1128,18 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                             setOtpStep(1);
                             setErrorMsg(null);
                           }}
-                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
+                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <ArrowLeft className="w-3 h-3" />
                           <span>Change</span>
                         </button>
                       </div>
 
-                      {/* 6 Digit Input Boxes */}
                       <div className="flex items-center justify-between gap-1.5 sm:gap-2">
                         {otpDigits.map((digit, idx) => (
                           <input
                             key={idx}
-                            id={`login-otp-box-${idx}`}
+                            id={`email-otp-box-${idx}`}
                             type="text"
                             inputMode="numeric"
                             maxLength={1}
@@ -841,15 +1156,6 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         ))}
                       </div>
 
-                      {previewOtp && (
-                        <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center justify-between text-xs text-cyan-300">
-                          <span>Live Mailgun Sandbox Code:</span>
-                          <span className="font-mono font-bold tracking-widest text-white bg-cyan-900/60 px-2 py-0.5 rounded">
-                            {previewOtp}
-                          </span>
-                        </div>
-                      )}
-
                       <button
                         type="button"
                         onClick={() => handleVerifyLoginOtp()}
@@ -863,27 +1169,25 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                           </>
                         ) : (
                           <>
-                            <Check className="w-4 h-4 stroke-[3]" />
-                            <span>Verify Code & Continue</span>
+                            <Check className="w-4 h-4" />
+                            <span>Verify Passcode</span>
                           </>
                         )}
                       </button>
 
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="text-slate-400 text-[11px]">Didn&apos;t receive code?</span>
+                      <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <span>Didn&apos;t receive email?</span>
                         {canResendOtp ? (
                           <button
                             type="button"
                             onClick={handleResendLoginOtp}
                             disabled={isSubmitting}
-                            className="text-cyan-400 hover:text-cyan-300 font-semibold text-[11px]"
+                            className="text-cyan-400 hover:underline font-semibold cursor-pointer"
                           >
-                            Resend Code via Mailgun
+                            Resend Code
                           </button>
                         ) : (
-                          <span className="text-slate-500 font-mono text-[11px]">
-                            Resend in {otpCountdown}s
-                          </span>
+                          <span className="font-mono text-slate-500">Resend in {otpCountdown}s</span>
                         )}
                       </div>
                     </div>
@@ -892,22 +1196,22 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
               )}
 
               {/* ----------------------------------------------------------- */}
-              {/* TAB 2: PASSWORD LOGIN                                       */}
+              {/* TAB 3: PASSWORD LOGIN                                       */}
               {/* ----------------------------------------------------------- */}
               {activeTab === 'password' && (
                 <form onSubmit={handlePasswordLogin} className="space-y-4">
                   <div>
                     <label className="block text-slate-300 text-xs font-medium mb-1.5">
-                      Username or Registered Email
+                      Username or Email
                     </label>
                     <div className="relative">
-                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                       <input
                         type="text"
                         value={pwdIdentifier}
                         onChange={(e) => setPwdIdentifier(e.target.value)}
-                        placeholder="admin or user@domain.com"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-medium"
+                        placeholder="admin or user@example.com"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
                         autoFocus
                         required
                       />
@@ -919,44 +1223,46 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                       <label className="text-slate-300 text-xs font-medium">Password</label>
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
+                        onClick={() => {
+                          setActiveTab('otp');
+                          setErrorMsg(null);
+                        }}
+                        className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
                       >
-                        {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                        <span>{showPassword ? 'Hide' : 'Show'}</span>
+                        Forgot password?
                       </button>
                     </div>
                     <div className="relative">
-                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={pwdValue}
                         onChange={(e) => setPwdValue(e.target.value)}
                         placeholder="••••••••••••"
-                        className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-mono"
+                        className="w-full pl-10 pr-10 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
                         required
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-200 cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={rememberDevice}
-                        onChange={(e) => setRememberDevice(e.target.checked)}
-                        className="rounded border-slate-700 bg-slate-950 text-cyan-500 focus:ring-0"
-                      />
-                      <span className="text-[11px]">Stay signed in on this device</span>
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="remember-pwd"
+                      checked={rememberDevice}
+                      onChange={(e) => setRememberDevice(e.target.checked)}
+                      className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer accent-cyan-500"
+                    />
+                    <label htmlFor="remember-pwd" className="text-xs text-slate-400 cursor-pointer select-none">
+                      Stay logged in on this browser
                     </label>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('otp')}
-                      className="text-[11px] text-cyan-400 hover:underline"
-                    >
-                      Use Email OTP instead
-                    </button>
                   </div>
 
                   <button
@@ -976,24 +1282,11 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                       </>
                     )}
                   </button>
-
-                  {/* 1-Click Demo Testing Button */}
-                  <div className="pt-2 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400">Quick Testing Account:</span>
-                    <button
-                      type="button"
-                      onClick={fillAdminDemo}
-                      className="text-cyan-400 hover:underline font-semibold flex items-center gap-1"
-                    >
-                      <KeyRound className="w-3 h-3" />
-                      <span>Fill Admin (admin / adminpassword123)</span>
-                    </button>
-                  </div>
                 </form>
               )}
 
               {/* ----------------------------------------------------------- */}
-              {/* TAB 3: CREATE ACCOUNT (REGISTRATION WITH MAILGUN OTP)       */}
+              {/* TAB 4: CREATE ACCOUNT (REGISTRATION)                        */}
               {/* ----------------------------------------------------------- */}
               {activeTab === 'signup' && (
                 <div>
@@ -1006,7 +1299,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                           value={signupDisplayName}
                           onChange={(e) => setSignupDisplayName(e.target.value)}
                           placeholder="e.g. Alex Rivera"
-                          className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition"
+                          className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
                           required
                         />
                       </div>
@@ -1019,9 +1312,9 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                             <input
                               type="text"
                               value={signupUsername}
-                              onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                              placeholder="alexrivera"
-                              className="w-full pl-7 pr-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs font-mono focus:outline-none focus:border-cyan-500 transition"
+                              onChange={(e) => setSignupUsername(e.target.value)}
+                              placeholder="username"
+                              className="w-full pl-7 pr-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium font-mono"
                               required
                             />
                           </div>
@@ -1033,69 +1326,74 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                             type="email"
                             value={signupEmail}
                             onChange={(e) => setSignupEmail(e.target.value)}
-                            placeholder="alex@domain.com"
-                            className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition"
+                            placeholder="name@example.com"
+                            className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
                             required
                           />
                         </div>
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-slate-300 text-xs font-medium">Create Password</label>
+                        <label className="block text-slate-300 text-xs font-medium mb-1">Create Password</label>
+                        <div className="relative">
+                          <input
+                            type={showSignupPassword ? 'text' : 'password'}
+                            value={signupPassword}
+                            onChange={(e) => setSignupPassword(e.target.value)}
+                            placeholder="At least 6 characters"
+                            className="w-full pl-3 pr-10 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
+                            required
+                          />
                           <button
                             type="button"
                             onClick={() => setShowSignupPassword(!showSignupPassword)}
-                            className="text-[10px] text-cyan-400 hover:underline"
+                            className="absolute right-3 top-2 text-slate-400 hover:text-slate-200 cursor-pointer"
                           >
-                            {showSignupPassword ? 'Hide' : 'Show'}
+                            {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
-                        <input
-                          type={showSignupPassword ? 'text' : 'password'}
-                          value={signupPassword}
-                          onChange={(e) => setSignupPassword(e.target.value)}
-                          placeholder="Minimum 6 characters"
-                          className="w-full px-3 py-2 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs font-mono focus:outline-none focus:border-cyan-500 transition"
-                          required
-                        />
                       </div>
+
+                      <p className="text-[11px] text-slate-400">
+                        By continuing, you accept the Platform Terms of Service and End-to-End Privacy Policy.
+                      </p>
 
                       <button
                         type="submit"
                         disabled={isSubmitting}
-                        className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                       >
                         {isSubmitting ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Sending Email OTP...</span>
+                            <span>Sending Verification...</span>
                           </>
                         ) : (
                           <>
-                            <span>Verify Email via Mailgun</span>
+                            <span>Create Account</span>
                             <ArrowRight className="w-4 h-4" />
                           </>
                         )}
                       </button>
                     </form>
                   ) : (
-                    /* Step 2: Signup OTP Verification */
+                    /* Signup Step 2: 6-Box OTP */
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <span className="text-xs text-slate-300 font-medium block">
-                            Verify your registration email:
-                          </span>
+                          <span className="text-xs text-slate-300 font-medium block">Enter confirmation code sent to:</span>
                           <span className="text-xs font-mono text-cyan-300 font-semibold">{signupEmail}</span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setSignupStep(1)}
-                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
+                          onClick={() => {
+                            setSignupStep(1);
+                            setErrorMsg(null);
+                          }}
+                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <ArrowLeft className="w-3 h-3" />
-                          <span>Edit</span>
+                          <span>Edit Info</span>
                         </button>
                       </div>
 
@@ -1120,15 +1418,6 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         ))}
                       </div>
 
-                      {signupPreviewOtp && (
-                        <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center justify-between text-xs text-cyan-300">
-                          <span>Sandbox Email OTP:</span>
-                          <span className="font-mono font-bold tracking-widest text-white bg-cyan-900/60 px-2 py-0.5 rounded">
-                            {signupPreviewOtp}
-                          </span>
-                        </div>
-                      )}
-
                       <button
                         type="button"
                         onClick={() => handleVerifySignupOtp()}
@@ -1138,31 +1427,29 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         {isSubmitting ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Creating Account...</span>
+                            <span>Confirming Account...</span>
                           </>
                         ) : (
                           <>
-                            <Check className="w-4 h-4 stroke-[3]" />
-                            <span>Confirm & Activate Account</span>
+                            <Check className="w-4 h-4" />
+                            <span>Verify &amp; Enter Platform</span>
                           </>
                         )}
                       </button>
 
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <span className="text-slate-400 text-[11px]">Didn&apos;t receive code?</span>
+                      <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <span>Didn&apos;t receive email?</span>
                         {canResendSignupOtp ? (
                           <button
                             type="button"
                             onClick={handleResendSignupOtp}
                             disabled={isSubmitting}
-                            className="text-cyan-400 hover:text-cyan-300 font-semibold text-[11px]"
+                            className="text-cyan-400 hover:underline font-semibold cursor-pointer"
                           >
-                            Resend Code via Mailgun
+                            Resend Code
                           </button>
                         ) : (
-                          <span className="text-slate-500 font-mono text-[11px]">
-                            Resend in {signupCountdown}s
-                          </span>
+                          <span className="font-mono text-slate-500">Resend in {signupCountdown}s</span>
                         )}
                       </div>
                     </div>
@@ -1171,7 +1458,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
               )}
 
               {/* ----------------------------------------------------------- */}
-              {/* TAB 4: QR PAIR (Rendered on mobile viewport)                 */}
+              {/* TAB 5: MOBILE-ONLY QR VIEW                                  */}
               {/* ----------------------------------------------------------- */}
               {activeTab === 'qr' && (
                 <div className="lg:hidden flex flex-col items-center justify-center space-y-4 py-2">
@@ -1179,56 +1466,58 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     {qrIsLoading ? (
                       <RefreshCw className="w-6 h-6 animate-spin text-cyan-600" />
                     ) : (
-                      <img src={qrCodeDataUrl} alt="QR Code" className="w-full h-full object-contain" />
+                      <img src={qrCodeDataUrl} alt="QR Code" className="w-full h-full object-contain select-none" />
                     )}
                   </div>
                   <div className="text-center space-y-1">
                     <span className="text-xs text-slate-300 font-semibold block">Pair Code: {qrLinkCode}</span>
                     <p className="text-[11px] text-slate-400">Open Aether on phone &gt; Settings &gt; Linked Devices</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSimulateMobileScan}
-                    disabled={isSimulatingScan}
-                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition"
-                  >
-                    Simulate Mobile Scan (Demo)
-                  </button>
+                  {qrIsExpired && (
+                    <button
+                      type="button"
+                      onClick={initQrSession}
+                      className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Refresh Code</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Security Trust Note at Bottom */}
+            {/* Bottom Security Trust Badge */}
             <div className="pt-6 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
               <div className="flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span>TLS 1.3 · Mailgun SMTP Verified</span>
+                <span>AES-256-GCM End-to-End Encrypted</span>
               </div>
-              <span className="text-slate-400 font-mono text-[10px]">v3.4.0</span>
+              <span className="text-slate-500 font-mono text-[10px]">v3.4.0</span>
             </div>
           </div>
 
           {/* =================================================================== */}
-          {/* RIGHT COLUMN: WHATSAPP WEB STYLE QR CODE & PAIRING INSTRUCTIONS   */}
+          {/* RIGHT COLUMN: WHATSAPP WEB STYLE QR CODE & PAIRING STATION         */}
           {/* =================================================================== */}
-          <div className="hidden lg:flex lg:col-span-5 p-8 md:p-10 flex-col items-center justify-between bg-slate-950/60 relative">
-            {/* Top Badge */}
+          <div className="hidden lg:flex lg:col-span-5 p-8 md:p-10 flex-col items-center justify-between bg-slate-950/70 relative">
+            {/* Top QR Station Header */}
             <div className="w-full flex items-center justify-between text-xs pb-2">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5">
                 <QrCode className="w-4 h-4 text-cyan-400" />
-                <span>Instant QR Web Pair</span>
+                <span>Link with QR Code</span>
               </span>
-              <span className="text-[10px] text-cyan-400 font-mono">
-                {qrIsExpired ? 'Expired' : `${qrRemainingSecs}s active`}
+              <span className="text-[10px] text-cyan-400 font-mono bg-cyan-950/60 border border-cyan-800/40 px-2 py-0.5 rounded-full">
+                {qrIsExpired ? 'Code Expired' : `${qrRemainingSecs}s active`}
               </span>
             </div>
 
-            {/* QR Card with Cyan Cyber Glow */}
+            {/* WhatsApp Web Style Elevated QR Canvas Card */}
             <div className="relative group my-auto">
-              {/* Cyan Pulse Accent Ring */}
-              <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-cyan-500 to-blue-600 opacity-20 blur-md group-hover:opacity-40 transition" />
+              {/* Cyan Subtle Cyber Ring */}
+              <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-cyan-500 to-blue-600 opacity-20 blur-md group-hover:opacity-35 transition" />
 
-              {/* White QR Code Canvas Wrapper */}
+              {/* White High-Contrast QR Code Surface */}
               <div className="relative p-4 bg-white rounded-3xl shadow-2xl w-64 h-64 flex items-center justify-center overflow-hidden">
                 {qrIsLoading ? (
                   <div className="flex flex-col items-center justify-center space-y-2 text-slate-700">
@@ -1240,20 +1529,20 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
                       <Check className="w-8 h-8 text-emerald-600 stroke-[3]" />
                     </div>
-                    <span className="text-sm font-bold">Authorized!</span>
+                    <span className="text-sm font-bold">Device Linked!</span>
                     <span className="text-[11px] text-slate-600">Syncing chat data...</span>
                   </div>
                 ) : qrIsExpired ? (
-                  <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center space-y-3 z-30">
-                    <span className="text-xs font-bold text-rose-300">Code Expired</span>
-                    <p className="text-[11px] text-slate-400">Click below to refresh pairing session</p>
+                  <div className="absolute inset-0 bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center space-y-3 z-30">
+                    <span className="text-xs font-bold text-rose-300">QR Code Expired</span>
+                    <p className="text-[11px] text-slate-400">Click below to generate a fresh pairing session</p>
                     <button
                       type="button"
                       onClick={initQrSession}
                       className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition shadow flex items-center gap-1.5 cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Refresh Code</span>
+                      <span>Refresh QR Code</span>
                     </button>
                   </div>
                 ) : (
@@ -1270,46 +1559,48 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
               </div>
             </div>
 
-            {/* Step-by-Step Instructions */}
+            {/* Step-by-Step Instructions (Exact WhatsApp Web UX) */}
             <div className="w-full space-y-3 pt-4">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 text-[11px]">How to link:</span>
+                <span className="text-slate-400 text-[11px] font-medium">To link your device:</span>
                 <button
                   type="button"
                   onClick={copyQrCode}
-                  className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono"
-                  title="Copy 8-char link code"
+                  className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono cursor-pointer"
+                  title="Copy Link Code"
                 >
                   {qrCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   <span>{qrCopied ? 'Copied code' : `Code: ${qrLinkCode}`}</span>
                 </button>
               </div>
 
-              <ol className="space-y-1.5 text-[11px] text-slate-300">
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold">1</span>
+              <ol className="space-y-2 text-[11px] text-slate-300">
+                <li className="flex items-center gap-2.5">
+                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
                   <span>Open {branding.appName} on your phone</span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold">2</span>
-                  <span>Tap Settings &gt; Linked Devices &gt; Link Device</span>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                  <span>Go to <strong>Settings</strong> &gt; <strong>Linked Devices</strong></span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold">3</span>
+                <li className="flex items-center gap-2.5">
+                  <span className="w-4 h-4 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80 flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
                   <span>Point camera at this screen to capture QR</span>
                 </li>
               </ol>
 
-              {/* Simulate Mobile Scan for instant desktop demo */}
-              <button
-                type="button"
-                onClick={handleSimulateMobileScan}
-                disabled={isSimulatingScan || qrIsExpired || qrAuthorizedSuccess}
-                className="w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-cyan-300 text-xs font-medium rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{isSimulatingScan ? 'Authorizing Web...' : 'Simulate Phone Scan (Instant Demo)'}</span>
-              </button>
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('phone');
+                    setErrorMsg(null);
+                  }}
+                  className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
+                >
+                  Link with phone number instead &rarr;
+                </button>
+              </div>
             </div>
           </div>
         </div>

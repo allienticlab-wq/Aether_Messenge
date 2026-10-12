@@ -10,7 +10,8 @@ export const PWAInstallButton: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const isStandalone =
@@ -20,7 +21,9 @@ export const PWAInstallButton: React.FC = () => {
 
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+    const isAndroidDevice = /android/.test(userAgent);
     setIsIOS(isIOSDevice);
+    setIsAndroid(isAndroidDevice);
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
@@ -42,7 +45,10 @@ export const PWAInstallButton: React.FC = () => {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
+    if (!deferredPrompt) {
+      setShowGuide(true);
+      return;
+    }
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
@@ -53,54 +59,74 @@ export const PWAInstallButton: React.FC = () => {
 
   if (isInstalled) return null;
 
-  if (deferredPrompt) {
-    return (
+  return (
+    <>
       <button
         onClick={handleInstallClick}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800/60 rounded-lg transition-colors shadow-sm"
-        title="Install Aether Web App"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-800/60 rounded-xl transition shadow-sm cursor-pointer"
+        title="Install Aether on Android / Mobile"
       >
         <Download className="w-3.5 h-3.5 text-cyan-400" />
-        <span>Install App</span>
+        <span>{isAndroid ? 'Install Android App' : isIOS ? 'Install iOS App' : 'Install App'}</span>
       </button>
-    );
-  }
 
-  if (isIOS) {
-    return (
-      <>
-        <button
-          onClick={() => setShowIOSGuide(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 rounded-lg transition-colors"
-        >
-          <Download className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Install PWA</span>
-        </button>
+      {showGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <Download className="w-4 h-4 text-cyan-400" />
+              <span>Install Aether on {isAndroid ? 'Android' : isIOS ? 'iPhone' : 'Your Device'}</span>
+            </h3>
+            
+            {isAndroid ? (
+              <div className="text-xs text-slate-300 space-y-2">
+                <p>To install directly from your browser to your home screen:</p>
+                <ol className="space-y-1.5 text-[11px] text-slate-400 pl-4 list-decimal">
+                  <li>Tap the browser menu <strong className="text-cyan-300">⋮ (three dots)</strong> in Chrome / Brave.</li>
+                  <li>Select <strong className="text-cyan-300">&ldquo;Install App&rdquo;</strong> or <strong className="text-cyan-300">&ldquo;Add to Home screen&rdquo;</strong>.</li>
+                  <li>Confirm installation. The app will launch in full standalone native view without browser bars!</li>
+                </ol>
+                <div className="pt-2">
+                  <a
+                    href="/downloads/aether-android-project.zip"
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                    download
+                  >
+                    <span>Download Android Studio Project (.zip)</span>
+                  </a>
+                </div>
+              </div>
+            ) : isIOS ? (
+              <div className="text-xs text-slate-300 space-y-2">
+                <p>To install on iPhone or iPad:</p>
+                <ol className="space-y-1.5 text-[11px] text-slate-400 pl-4 list-decimal">
+                  <li>Tap the <strong className="text-cyan-300">Share</strong> icon at bottom of Safari.</li>
+                  <li>Scroll down and choose <strong className="text-cyan-300">&ldquo;Add to Home Screen&rdquo;</strong>.</li>
+                  <li>Tap <strong className="text-cyan-300">Add</strong> at top right.</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-300 space-y-2">
+                <p>Click the install icon in your address bar or download the Android Studio project archive.</p>
+                <a
+                  href="/downloads/aether-android-project.zip"
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                  download
+                >
+                  <span>Download Android Project (.zip)</span>
+                </a>
+              </div>
+            )}
 
-        {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
-              <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-                <Share className="w-4 h-4 text-cyan-400" />
-                Install on iPhone or iPad
-              </h3>
-              <p className="mt-3 text-xs text-slate-300 leading-relaxed">
-                1. Tap the <strong className="text-cyan-400">Share</strong> icon in the Safari navigation bar.<br />
-                2. Scroll down and choose <strong className="text-cyan-400">Add to Home Screen</strong>.<br />
-                3. Enjoy instant full-screen messaging and offline reliability.
-              </p>
-              <button
-                onClick={() => setShowIOSGuide(false)}
-                className="mt-5 w-full rounded-lg bg-slate-800 hover:bg-slate-700 py-2 text-xs font-medium text-slate-200 transition-colors"
-              >
-                Done
-              </button>
-            </div>
+            <button
+              onClick={() => setShowGuide(false)}
+              className="w-full rounded-xl bg-cyan-500 hover:bg-cyan-400 py-2 text-xs font-bold text-slate-950 transition cursor-pointer"
+            >
+              Got it
+            </button>
           </div>
-        )}
-      </>
-    );
-  }
-
-  return null;
+        </div>
+      )}
+    </>
+  );
 };

@@ -884,6 +884,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Android Native App (.APK / TWA) */}
+              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-cyan-400" />
+                    <span>Android Native App Package</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">Android Studio project &amp; Bubblewrap configuration pre-wired to https://aether.xperiserv.in/</div>
+                </div>
+                <a
+                  href="/downloads/aether-android-project.zip"
+                  className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-200 font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  download="aether-android-project.zip"
+                >
+                  <Download className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Download (.zip)</span>
+                </a>
+              </div>
+
               <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-slate-200">Export All Account Data</div>

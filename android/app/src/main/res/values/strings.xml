@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aether</string>
+    <string name="title_activity_main">Aether Messenger</string>
+    <string name="package_name">in.xperiserv.aether</string>
+    <string name="custom_url_scheme">in.xperiserv.aether</string>
+    <string name="server_url">https://aether.xperiserv.in/</string>
+</resources>

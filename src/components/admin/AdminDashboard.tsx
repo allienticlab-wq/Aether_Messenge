@@ -107,6 +107,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     | 'audit'
     | 'backup'
     | 'easypanel'
+    | 'android'
   >('overview');
 
   // State
@@ -391,8 +392,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // MessageCentral VerifyNow API State
   const [mcConfig, setMcConfig] = useState<MessageCentralConfig>({
-    customerId: 'C-AETHERDEMO2026',
-    apiKey: 'dGVzdF9hcGlfa2V5X21lc3NhZ2VfY2VudHJhbF9pbmRpYV8yMDI2',
+    customerId: 'C-AETHER2026',
+    apiKey: '',
     senderId: 'AETHER',
     flowType: 'SMS',
     countryCode: '91',
@@ -1028,6 +1029,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'audit', label: 'Audit Logs', icon: FileClock },
     { id: 'backup', label: 'Backup & Restore', icon: Database },
     { id: 'easypanel', label: 'Easypanel Deploy', icon: Server },
+    { id: 'android', label: 'Android APK & TWA', icon: Smartphone },
   ];
 
   const isAdmin = currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'admin');
@@ -3152,6 +3154,155 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="p-3 rounded-lg bg-cyan-950/40 border border-cyan-800/40 space-y-1 font-mono text-cyan-300">
                         <div>Username / Identifier: <strong>admin</strong> (or <strong>support@xperiserv.in</strong>)</div>
                         <div>Initial Master Password: <strong>AdminPass2026!</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 20. ANDROID APP & APK PACKAGING CONSOLE */}
+            {activeTab === 'android' && (
+              <div className="space-y-6 max-w-4xl">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 font-bold text-[10px]">
+                      NATIVE ANDROID HUB
+                    </span>
+                    <h3 className="font-bold text-slate-100 text-sm">Android App (.APK) & TWA Packaging Hub</h3>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Compile and distribute Aether as a native Android application (.apk / .aab) connected to your server <strong className="text-cyan-400 font-mono">https://aether.xperiserv.in/</strong>.
+                  </p>
+                </div>
+
+                {/* Production Configuration Status Box */}
+                <div className="p-4 rounded-2xl bg-slate-950/80 border border-cyan-800/60 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-cyan-400" />
+                      <span className="font-bold text-slate-100 text-xs">Android Build Specifications</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-semibold">
+                      Production Ready
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Connected Server URL:</span>
+                      <strong className="text-cyan-400 font-mono break-all">https://aether.xperiserv.in/</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Android Package ID:</span>
+                      <strong className="text-slate-100 font-mono">in.xperiserv.aether</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">App Display Name:</span>
+                      <strong className="text-slate-100">Aether Messenger</strong>
+                    </div>
+                  </div>
+
+                  {/* 1-Click Download Android Studio Project */}
+                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40">
+                    <div>
+                      <div className="font-semibold text-cyan-200 text-xs">Download Full Android Studio Project (.zip)</div>
+                      <p className="text-[11px] text-cyan-300/80">Includes Gradle scripts, AndroidManifest.xml, permissions, and WebView pre-wired to your server.</p>
+                    </div>
+                    <a
+                      href="/downloads/aether-android-project.zip"
+                      className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20 shrink-0"
+                      download="aether-android-project.zip"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Android Project (.zip)</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* Step-by-Step Build Guides */}
+                <div className="space-y-4">
+                  {/* Option 1: Android Studio Native APK */}
+                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
+                      <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-700 flex items-center justify-center text-[10px]">A</span>
+                      <span>Compile Native APK with Android Studio (Recommended)</span>
+                    </div>
+                    <ol className="pl-7 space-y-2 text-[11px] text-slate-300 list-decimal">
+                      <li>
+                        Download and extract <code className="text-cyan-300">aether-android-project.zip</code> on your computer.
+                      </li>
+                      <li>
+                        Open <strong>Android Studio</strong> &rarr; Click <strong>Open</strong> &rarr; Select the extracted <code className="text-cyan-300">android/</code> folder.
+                      </li>
+                      <li>
+                        In Android Studio menu, click <strong>Build &rarr; Build Bundle(s) / APK(s) &rarr; Build APK(s)</strong>.
+                      </li>
+                      <li>
+                        Your compiled Android APK will be ready at:
+                        <div className="p-2 mt-1 rounded bg-slate-900 border border-slate-800 font-mono text-[10px] text-emerald-400 select-all">
+                          android/app/build/outputs/apk/debug/app-debug.apk
+                        </div>
+                      </li>
+                      <li>
+                        Transfer and install <code className="text-cyan-300">app-debug.apk</code> to any Android phone, or sign for Google Play Console!
+                      </li>
+                    </ol>
+                  </div>
+
+                  {/* Option 2: One-Command Bubblewrap TWA */}
+                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
+                      <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-700 flex items-center justify-center text-[10px]">B</span>
+                      <span>Google Play Store Trusted Web Activity (TWA via Bubblewrap)</span>
+                    </div>
+                    <div className="pl-7 space-y-2 text-[11px] text-slate-300">
+                      <p>Bubblewrap CLI packages your live URL directly into an official signed Google Play Store App Bundle (.aab) and APK:</p>
+                      <div className="p-2.5 rounded bg-slate-900 border border-slate-800 font-mono text-[11px] text-cyan-300 flex items-center justify-between">
+                        <code>npx @bubblewrap/cli build</code>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText('npx @bubblewrap/cli build');
+                            setActionMessage('Copied Bubblewrap build command!');
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-white"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Uses <code className="text-slate-300">twa-manifest.json</code> which is already configured for <strong className="text-cyan-300">https://aether.xperiserv.in/</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Option 3: Browser Direct Install */}
+                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
+                      <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-700 flex items-center justify-center text-[10px]">C</span>
+                      <span>Direct Browser Home Screen Installation (Instant PWA)</span>
+                    </div>
+                    <div className="pl-7 space-y-1.5 text-[11px] text-slate-300">
+                      <p>Android users don&apos;t even need an APK download:</p>
+                      <ul className="list-disc pl-4 space-y-1 text-slate-400">
+                        <li>Open <code className="text-cyan-300">https://aether.xperiserv.in/</code> on any Android phone in Chrome or Brave.</li>
+                        <li>Tap the <strong className="text-slate-200">&ldquo;Install Android App&rdquo;</strong> button in the top bar, or tap the Chrome menu (⋮) &rarr; <strong className="text-slate-200">&ldquo;Install App&rdquo;</strong>.</li>
+                        <li>The app installs with native app icon, standalone immersion, and background sync!</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Android Verification Endpoints */}
+                  <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-[11px]">
+                    <div className="font-bold text-slate-200">Android Verification Endpoints (Served by your backend):</div>
+                    <div className="space-y-1 font-mono text-[10px]">
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+                        <span>Web Manifest: <strong className="text-cyan-400">https://aether.xperiserv.in/manifest.webmanifest</strong></span>
+                        <a href="/manifest.webmanifest" target="_blank" className="text-cyan-400 hover:underline">Verify ↗</a>
+                      </div>
+                      <div className="flex items-center justify-between p-2 rounded bg-slate-900 border border-slate-800">
+                        <span>Digital Asset Links: <strong className="text-cyan-400">https://aether.xperiserv.in/.well-known/assetlinks.json</strong></span>
+                        <a href="/.well-known/assetlinks.json" target="_blank" className="text-cyan-400 hover:underline">Verify ↗</a>
                       </div>
                     </div>
                   </div>

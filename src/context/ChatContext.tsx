@@ -61,11 +61,15 @@ const ChatContext = createContext<ChatContextType | undefined>(undefined);
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
 
-  // Synchronous cache-backed initialization so page refresh NEVER resets to empty state
+  // Synchronous cache-backed initialization without forcing demo data
   const [chats, setChats] = useState<Chat[]>(() => {
     try {
       const cached = localStorage.getItem('aether_cached_chats');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Exclude any stale demo announcement chats
+        return Array.isArray(parsed) ? parsed.filter((c: any) => c.id !== 'chat_announcements') : [];
+      }
     } catch {}
     return [];
   });
@@ -73,25 +77,23 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activeChat, setActiveChatState] = useState<Chat | null>(() => {
     try {
       const cachedId = localStorage.getItem('aether_active_chat_id');
-      const cachedChats = localStorage.getItem('aether_cached_chats');
-      if (cachedChats) {
-        const parsed = JSON.parse(cachedChats);
-        if (cachedId) {
+      if (cachedId && cachedId !== 'chat_announcements') {
+        const cachedChats = localStorage.getItem('aether_cached_chats');
+        if (cachedChats) {
+          const parsed = JSON.parse(cachedChats);
           const match = parsed.find((c: any) => c.id === cachedId);
-          if (match) return match;
-        }
-        if (parsed.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 768) {
-          return parsed[0];
+          if (match && match.id !== 'chat_announcements') return match;
         }
       }
     } catch {}
+    // Clean production state: Do NOT automatically open demo chats on load
     return null;
   });
 
   const [messages, setMessages] = useState<Message[]>(() => {
     try {
       const cachedId = localStorage.getItem('aether_active_chat_id');
-      if (cachedId) {
+      if (cachedId && cachedId !== 'chat_announcements') {
         const cachedMsgs = localStorage.getItem(`aether_cached_msgs_${cachedId}`);
         if (cachedMsgs) return JSON.parse(cachedMsgs);
       }
@@ -131,10 +133,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setActiveChat = (chat: Chat | null) => {
     setActiveChatState(chat);
     activeChatRef.current = chat;
-    if (chat) {
+    if (chat && chat.id !== 'chat_announcements') {
       localStorage.setItem('aether_active_chat_id', chat.id);
+    } else {
+      localStorage.removeItem('aether_active_chat_id');
     }
   };
+
+  // Clean stale demo cache keys on startup
+  useEffect(() => {
+    try {
+      localStorage.removeItem('aether_cached_msgs_chat_announcements');
+      if (localStorage.getItem('aether_active_chat_id') === 'chat_announcements') {
+        localStorage.removeItem('aether_active_chat_id');
+      }
+    } catch {}
+  }, []);
 
   // Fetch chats and communities, restoring previous active chat if saved
   const refreshChats = async () => {
@@ -147,19 +161,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const chatsData = await chatsRes.json();
       const commsData = await commsRes.json();
       if (chatsData.chats) {
-        setChats(chatsData.chats);
-        localStorage.setItem('aether_cached_chats', JSON.stringify(chatsData.chats));
+        // Exclude any stale demo announcements chat
+        const realChats = chatsData.chats.filter((c: Chat) => c.id !== 'chat_announcements');
+        setChats(realChats);
+        localStorage.setItem('aether_cached_chats', JSON.stringify(realChats));
 
-        // Restore active chat from localStorage on page refresh or first load
+        // Restore active chat only if previously selected by user
         const savedChatId = localStorage.getItem('aether_active_chat_id');
-        if (savedChatId) {
-          const match = chatsData.chats.find((c: Chat) => c.id === savedChatId);
+        if (savedChatId && savedChatId !== 'chat_announcements') {
+          const match = realChats.find((c: Chat) => c.id === savedChatId);
           if (match) {
             setActiveChat(match);
-          }
-        } else if (!activeChatRef.current && chatsData.chats.length > 0) {
-          if (window.innerWidth >= 768) {
-            setActiveChat(chatsData.chats[0]);
           }
         }
       }

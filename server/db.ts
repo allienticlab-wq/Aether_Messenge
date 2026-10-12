@@ -107,28 +107,8 @@ class Database {
         maxUploadSizeMb: 50,
         otpExpirationMinutes: 10,
       },
-      callsHistory: [
-        {
-          id: 'call_seed_1',
-          chatId: 'chat_announcements',
-          initiatorId: 'usr_admin',
-          initiatorName: 'System Administrator',
-          type: 'voice',
-          durationSeconds: 120,
-          status: 'completed',
-          createdAt: new Date(Date.now() - 3600 * 1000 * 6).toISOString(),
-        },
-      ],
-      notificationsHistory: [
-        {
-          id: 'notif_1',
-          target: 'all',
-          title: 'System Update Completed',
-          body: 'Platform core engine upgraded to v2.4 with enhanced WebRTC latency reduction.',
-          sentBy: 'System Administrator',
-          sentAt: new Date(Date.now() - 3600 * 1000 * 24).toISOString(),
-        },
-      ],
+      callsHistory: [],
+      notificationsHistory: [],
     };
 
     this.seedInitialData();
@@ -137,7 +117,7 @@ class Database {
   private seedInitialData() {
     const now = new Date().toISOString();
 
-    // 1. Production Super Administrator (Sole seeded system authority)
+    // 1. Production Super Administrator (Sole system authority)
     const adminUser: DbUser = {
       id: 'usr_admin',
       email: 'support@xperiserv.in',
@@ -174,58 +154,6 @@ class Database {
       },
     };
     this.state.users.set(adminUser.id, adminUser);
-
-    // Official Umbrella Community
-    const community: Community = {
-      id: 'comm_global',
-      name: 'Aether Collective',
-      description: 'Official umbrella community for announcements, support, and platform operations.',
-      avatarUrl: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=200&h=200&q=80',
-      bannerUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=800&h=300&q=80',
-      ownerId: adminUser.id,
-      channelIds: ['chat_announcements'],
-      memberCount: 1,
-      inviteCode: 'AETHER-GLOBAL',
-      createdAt: now,
-    };
-    this.state.communities.set(community.id, community);
-
-    // Official Announcements Broadcast Channel (Admin-only broadcast)
-    const announcementsChat: Chat = {
-      id: 'chat_announcements',
-      type: 'community_channel',
-      name: '📢 Official Announcements',
-      description: 'Official platform notifications, updates, and maintenance announcements.',
-      communityId: community.id,
-      adminOnlyMessaging: true,
-      disappearingDuration: 'off',
-      unreadCount: 0,
-      createdAt: now,
-      updatedAt: now,
-      members: [
-        { userId: adminUser.id, role: 'owner', joinedAt: now },
-      ],
-    };
-    this.state.chats.set(announcementsChat.id, announcementsChat);
-
-    // Official Welcome Message
-    const welcomeMsg: Message = {
-      id: 'msg_ann_1',
-      chatId: announcementsChat.id,
-      senderId: adminUser.id,
-      text: '🚀 Welcome to Aether Messenger. Real-time communication, WebRTC calling, official verified identity marks, and audited operations are active.',
-      reactions: [
-        { emoji: '⚡', userIds: [adminUser.id], count: 1 },
-      ],
-      deletedForUserIds: [],
-      status: 'read',
-      createdAt: now,
-    };
-    this.state.messages.set(welcomeMsg.id, welcomeMsg);
-    announcementsChat.lastMessage = welcomeMsg;
-
-    // Connect admin to initial direct chats
-    this.ensureUserDefaultChats(adminUser.id);
 
     // Production System Boot Audit Log
     const log1: AuditLog = {
@@ -319,16 +247,8 @@ class Database {
     };
   }
 
-  public ensureUserDefaultChats(userId: string) {
-    const user = this.state.users.get(userId);
-    if (!user) return;
-    const now = new Date().toISOString();
-
-    // Ensure user is added as a member in the official broadcast channel
-    const annChat = this.state.chats.get('chat_announcements');
-    if (annChat && !annChat.members.some(m => m.userId === userId)) {
-      annChat.members.push({ userId, role: 'member', joinedAt: now });
-    }
+  public ensureUserDefaultChats(_userId: string) {
+    // Clean state: No seeded demo chats forced into chat lists
   }
 
   public createUser(data: { email?: string; username: string; displayName: string; password: string; phone?: string; role?: UserRole }): DbUser {

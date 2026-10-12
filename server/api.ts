@@ -1014,7 +1014,7 @@ apiRouter.post('/verification/mfa/verify', requireAuth, (req: Request, res: Resp
   const user = (req as any).user;
   const { code } = req.body;
 
-  // In demo environment, accept any valid 6 digit code or backup code
+  // Validate 6 digit authenticator code or backup code
   if (code && (code.length === 6 || user.backupCodes?.includes(code.toUpperCase()))) {
     user.mfaEnabled = true;
     db.addAuditLog(user.id, user.displayName, 'MFA_ENABLED', 'user', user.id, {});

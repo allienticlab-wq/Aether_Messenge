@@ -1,0 +1,40 @@
+{
+  "packageId": "in.xperiserv.aether",
+  "host": "aether.xperiserv.in",
+  "name": "Aether Messenger",
+  "launcherName": "Aether",
+  "themeColor": "#060913",
+  "navigationColor": "#060913",
+  "backgroundColor": "#060913",
+  "enableNotifications": true,
+  "startUrl": "https://aether.xperiserv.in/",
+  "iconUrl": "https://aether.xperiserv.in/icon-512.png",
+  "maskableIconUrl": "https://aether.xperiserv.in/icon-maskable.png",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Chats",
+      "shortName": "Chats",
+      "url": "https://aether.xperiserv.in/",
+      "icon": "https://aether.xperiserv.in/icon-192.png"
+    },
+    {
+      "name": "Link Device",
+      "shortName": "QR Link",
+      "url": "https://aether.xperiserv.in/web",
+      "icon": "https://aether.xperiserv.in/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://aether.xperiserv.in/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  }
+}
