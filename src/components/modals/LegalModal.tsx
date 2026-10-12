@@ -34,6 +34,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, default
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1 px-6 border-b border-slate-800 bg-slate-950/30 overflow-x-auto text-xs py-2">
           {[
+            { id: 'about', label: 'About Us & Company' },
             { id: 'privacy', label: 'Privacy Policy' },
             { id: 'terms', label: 'Terms of Service' },
             { id: 'security', label: 'Security & E2EE' },
@@ -76,6 +77,45 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, default
               </a>
             </div>
           </div>
+
+          {section === 'about' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/60 via-slate-900 to-slate-950 border border-cyan-800/60 space-y-2">
+                <h3 className="text-base font-bold text-white">About Allientic Lab Technologies</h3>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  <strong>Allientic Lab Technologies</strong> (Aether Technologies) is an enterprise communications and mobile technology company dedicated to privacy-first, zero-knowledge communication infrastructure.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <h4 className="font-semibold text-cyan-300">📱 Native Android Application</h4>
+                  <p className="text-slate-400 text-[11px]">
+                    Built strictly for native Android mobile deployment with optimized hardware acceleration for low latency WebRTC voice and video calling.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <h4 className="font-semibold text-cyan-300">🔐 Confidentiality & E2EE</h4>
+                  <p className="text-slate-400 text-[11px]">
+                    Zero-knowledge architecture utilizing Double Ratchet protocol and 256-bit AES-GCM encryption for complete privacy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-xl space-y-2">
+                <h4 className="font-semibold text-slate-200">Official Company Contacts</h4>
+                <p className="text-[11px] text-slate-300">
+                  For corporate partnerships, enterprise deployment, or support inquiries:
+                </p>
+                <ul className="list-disc pl-5 text-[11px] text-slate-400 space-y-1">
+                  <li><strong>Official Web Portal:</strong> <a href="https://Aether.xperiserv.in" target="_blank" rel="noreferrer" className="text-cyan-400 underline">https://Aether.xperiserv.in</a></li>
+                  <li><strong>Support Email:</strong> <a href="mailto:support@xperiserv.in" className="text-cyan-400 underline">support@xperiserv.in</a></li>
+                  <li><strong>App Edition:</strong> Aether Native Android APK Release v2.5.0</li>
+                </ul>
+              </div>
+            </div>
+          )}
 
           {section === 'privacy' && (
             <div className="space-y-3">

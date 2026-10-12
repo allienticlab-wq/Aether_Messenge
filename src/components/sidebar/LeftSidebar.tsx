@@ -117,12 +117,17 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <img src={branding.appLogo} alt={branding.appName} className="w-6 h-6 object-contain" />
           </div>
           <div>
-            <span className="font-bold text-slate-100 text-sm tracking-tight">{branding.appName}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-slate-100 text-sm tracking-tight">{branding.appName}</span>
+              <span className="px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 text-[9px] font-bold">
+                Android App
+              </span>
+            </div>
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-cyan-400 font-semibold flex items-center gap-1">
                 <span>🔒 E2EE Active</span>
               </span>
-              <span className="text-[9px] text-slate-500">&bull; AES-256-GCM</span>
+              <span className="text-[9px] text-slate-500">&bull; Allientic Lab</span>
             </div>
           </div>
         </div>

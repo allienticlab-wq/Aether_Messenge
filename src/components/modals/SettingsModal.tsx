@@ -39,7 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { currentUser, updateProfile, updatePrivacy, refreshUser } = useAuth();
   const { branding, theme, setTheme, accentColor, setAccentColor } = useBranding();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'privacy' | 'security' | 'sessions' | 'appearance' | 'account'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'privacy' | 'security' | 'sessions' | 'appearance' | 'account' | 'about'>('profile');
 
   // Profile Form
   const [displayName, setDisplayName] = useState('');
@@ -222,6 +222,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             { id: 'sessions', label: 'Devices', icon: Laptop },
             { id: 'appearance', label: 'Appearance', icon: Palette },
             { id: 'account', label: 'Data & Legal', icon: Globe },
+            { id: 'about', label: 'About Us', icon: Smartphone },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -844,6 +845,115 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete Account</span>
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* 7. ABOUT US (COMPANY & ANDROID APP) */}
+          {activeTab === 'about' && (
+            <div className="space-y-5">
+              {/* Company Header Banner */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-cyan-950/40 to-slate-950 border border-cyan-800/50 shadow-lg relative overflow-hidden">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center shrink-0 shadow-inner">
+                    <Smartphone className="w-8 h-8 text-cyan-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white">Allientic Lab Technologies</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-700/60 text-[10px] font-semibold">
+                        Android Native App v2.5.0
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                      Engineering next-generation secure communication platforms, WebRTC real-time voice & video calling, and zero-knowledge encrypted messaging.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Core Mission & Pillars */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                  <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-cyan-400" />
+                    <span>Zero-Knowledge Architecture</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    End-to-End Encryption with 256-bit AES-GCM ensures your messages and calls remain completely confidential to you and your recipient.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                  <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-cyan-400" />
+                    <span>Native Android Optimized</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    Engineered specifically for Android mobile devices for low memory footprint, low battery consumption, and adaptive hardware acceleration.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                  <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                    <Globe className="w-4 h-4 text-cyan-400" />
+                    <span>Real-Time Calling & Sync</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    Sub-second WebSocket messaging and peer-to-peer WebRTC voice/video calls with low-bandwidth adaptation.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                  <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-cyan-400" />
+                    <span>Verified Enterprise Identity</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-normal">
+                    Multi-tier identity verification for official business channels, support teams, and verified public figures.
+                  </p>
+                </div>
+              </div>
+
+              {/* Company Contact & Legal Info */}
+              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="font-semibold text-slate-200 text-xs uppercase tracking-wider text-slate-400">
+                  Company Directory & Support
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Organization:</span>
+                    <strong className="text-slate-200 font-medium">Allientic Lab Technologies</strong>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Official Domain:</span>
+                    <a
+                      href="https://Aether.xperiserv.in"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-cyan-400 hover:underline font-mono text-[11px]"
+                    >
+                      Aether.xperiserv.in ↗
+                    </a>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Support & Contact:</span>
+                    <a
+                      href="mailto:support@xperiserv.in"
+                      className="text-cyan-400 hover:underline font-mono text-[11px]"
+                    >
+                      support@xperiserv.in
+                    </a>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Build: Aether Native Android APK Edition v2.5.0</span>
+                  <span>Target OS: Android 8.0+ (API 26+)</span>
+                </div>
               </div>
             </div>
           )}
