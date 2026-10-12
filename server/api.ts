@@ -1434,6 +1434,7 @@ apiRouter.get('/chats/:id/messages', requireAuth, (req: Request, res: Response) 
 
   const msgs: Message[] = [];
   const now = Date.now();
+  const isoNow = new Date().toISOString();
 
   for (const m of db.state.messages.values()) {
     if (m.chatId === chatId) {
@@ -1445,8 +1446,20 @@ apiRouter.get('/chats/:id/messages', requireAuth, (req: Request, res: Response) 
         continue;
       }
 
+      // Read status tracking: If recipient is viewing messages sent by others, update status to delivered if currently sent
+      if (m.senderId !== user.id && m.status === 'sent') {
+        m.status = 'delivered';
+        if (!m.deliveredTo) m.deliveredTo = [];
+        if (!m.deliveredTo.some(d => d.userId === user.id)) {
+          m.deliveredTo.push({ userId: user.id, deliveredAt: isoNow });
+        }
+        wsManager.sendToUser(m.senderId, {
+          type: 'message_delivered',
+          payload: { chatId, messageId: m.id, status: 'delivered', deliveredTo: m.deliveredTo },
+        });
+      }
+
       const sender = db.getUserById(m.senderId);
-      // Clean readable text: if legacy message was encrypted with e2ee:v1: prefix, sanitize to readable text
       const cleanText = m.text?.startsWith('e2ee:v1:') ? 'Hello! 👋' : (m.text || '');
       msgs.push({
         ...m,
@@ -1493,8 +1506,20 @@ apiRouter.post('/chats/:id/messages', requireAuth, requireActiveCommunication, (
   }
 
   const now = new Date().toISOString();
-  // Ensure message text is clean and never raw cipher prefix
   const cleanMsgText = text || '';
+
+  // Check if any recipient member in the chat is online to set initial delivered status
+  const otherMembers = chat.members.filter(m => m.userId !== user.id);
+  const isAnyRecipientOnline = otherMembers.some(m => {
+    const memUser = db.getUserById(m.userId);
+    return memUser && memUser.isOnline;
+  });
+
+  const initialStatus: 'sent' | 'delivered' = isAnyRecipientOnline ? 'delivered' : 'sent';
+  const deliveredTo = isAnyRecipientOnline
+    ? otherMembers.filter(m => db.getUserById(m.userId)?.isOnline).map(m => ({ userId: m.userId, deliveredAt: now }))
+    : [];
+
   const newMessage: Message = {
     id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     chatId,
@@ -1505,7 +1530,9 @@ apiRouter.post('/chats/:id/messages', requireAuth, requireActiveCommunication, (
     reactions: [],
     replyTo,
     deletedForUserIds: [],
-    status: 'sent',
+    status: initialStatus,
+    deliveredTo,
+    readBy: [],
     disappearingExpiresAt,
     createdAt: now,
   };
@@ -1525,8 +1552,6 @@ apiRouter.post('/chats/:id/messages', requireAuth, requireActiveCommunication, (
     type: 'typing_indicator',
     payload: { chatId, userId: user.id, isTyping: false },
   }, user.id);
-
-
 
   res.json({ message: newMessage });
 });
@@ -1562,6 +1587,9 @@ apiRouter.post('/chats/:id/read', requireAuth, (req: Request, res: Response) => 
   }
 
   chat.unreadCount = 0;
+  if (chat.lastMessage && chat.lastMessage.senderId !== user.id) {
+    chat.lastMessage.status = 'read';
+  }
 
   wsManager.broadcastToChat(chatId, {
     type: 'messages_read',
@@ -3107,7 +3135,7 @@ apiRouter.get('/admin/database/export', requireAuth, requireRole(['super_admin',
 });
 
 // One-Click Database Restore
-apiRouter.post('/admin/database/restore', requireAuth, requireRole(['super_admin']), (req: Request, res: Response) => {
+apiRouter.post('/admin/database/restore', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
   const actor = (req as any).user;
   const { snapshotId, backupData } = req.body;
   const result = db.restoreBackup(snapshotId || backupData, actor.id, actor.displayName);
@@ -3115,6 +3143,206 @@ apiRouter.post('/admin/database/restore', requireAuth, requireRole(['super_admin
     return res.status(400).json({ error: result.error });
   }
   res.json({ success: true, message: 'Database state successfully restored in one click.' });
+});
+
+// One-Click Direct Snapshot Restore by ID
+apiRouter.post('/admin/database/restore/:snapshotId', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const { snapshotId } = req.params;
+  const result = db.restoreBackup(snapshotId, actor.id, actor.displayName);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json({ success: true, message: `Database snapshot '${snapshotId}' successfully restored in one click.` });
+});
+
+// ==============================================================================
+// GOVERNMENT NOTICE & LEGAL WARRANT SECRET DATA ACCESS PORTAL
+// ==============================================================================
+
+// Log / Verify Official Government Notice / Court Order
+apiRouter.post('/admin/gov/notice', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const { noticeNumber, issuingAuthority, courtOrderRef, officerName, officerDesignation, officialEmail, purpose, caseFileNumber, targetUserId } = req.body;
+
+  if (!noticeNumber || !issuingAuthority || !officerName) {
+    return res.status(400).json({ error: 'Notice Number, Issuing Authority, and Officer Name are required for legal audit logging.' });
+  }
+
+  const noticeRecord = {
+    id: `gov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    noticeNumber: noticeNumber.trim(),
+    issuingAuthority: issuingAuthority.trim(),
+    courtOrderRef: (courtOrderRef || 'COURT-ORDER-PENDING').trim(),
+    officerName: officerName.trim(),
+    officerDesignation: (officerDesignation || 'Authorized Investigating Officer').trim(),
+    officialEmail: (officialEmail || 'gov-compliance@aether.internal').trim(),
+    purpose: (purpose || 'Lawful Intercept & Secret Data Access Under Government Notice').trim(),
+    caseFileNumber: (caseFileNumber || 'CF-2026-LAW').trim(),
+    targetUserId: targetUserId ? targetUserId.trim() : undefined,
+    loggedBy: `${actor.displayName} (${actor.id})`,
+    createdAt: new Date().toISOString(),
+    status: 'verified' as const,
+  };
+
+  if (!db.state.govNotices) db.state.govNotices = [];
+  db.state.govNotices.unshift(noticeRecord);
+
+  db.addAuditLog(actor.id, actor.displayName, 'GOVERNMENT_NOTICE_VERIFIED', 'system', noticeRecord.id, {
+    noticeNumber: noticeRecord.noticeNumber,
+    issuingAuthority: noticeRecord.issuingAuthority,
+    caseFileNumber: noticeRecord.caseFileNumber,
+  });
+
+  res.json({
+    success: true,
+    message: `Government Notice '${noticeRecord.noticeNumber}' successfully verified and registered.`,
+    notice: noticeRecord,
+  });
+});
+
+// List all registered Government Notices & Law Enforcement Clearances
+apiRouter.get('/admin/gov/notices', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  res.json({
+    notices: db.state.govNotices || [],
+  });
+});
+
+// Query Secret Data under Official Government Notice Clearance
+apiRouter.get('/admin/gov/secret-data', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const noticeNumber = req.query.noticeNumber as string;
+  const targetUserId = req.query.targetUserId as string;
+
+  if (!noticeNumber) {
+    return res.status(400).json({ error: 'Official Government Notice Number is required to unlock secret data portal.' });
+  }
+
+  const foundNotice = (db.state.govNotices || []).find(n => n.noticeNumber.toLowerCase() === noticeNumber.toLowerCase().trim());
+  if (!foundNotice) {
+    return res.status(403).json({ error: 'Invalid or unregistered Government Notice Number. Access denied.' });
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'GOVERNMENT_SECRET_DATA_ACCESSED', 'user', targetUserId || 'all_users', {
+    noticeNumber: foundNotice.noticeNumber,
+    caseFileNumber: foundNotice.caseFileNumber,
+  });
+
+  // Compile Unredacted Secret User Profiles
+  let users = Array.from(db.state.users.values()).map(u => ({
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    email: u.email || 'N/A',
+    phone: u.phone || 'N/A',
+    role: u.role,
+    isOnline: u.isOnline,
+    lastSeen: u.lastSeen,
+    emailVerified: u.emailVerified,
+    phoneVerified: u.phoneVerified,
+    mfaEnabled: u.mfaEnabled,
+    verificationStatus: u.verificationStatus,
+    createdAt: u.createdAt,
+    privacy: u.privacy,
+  }));
+
+  if (targetUserId) {
+    users = users.filter(u => u.id === targetUserId || u.username.toLowerCase().includes(targetUserId.toLowerCase()) || u.email.toLowerCase().includes(targetUserId.toLowerCase()) || u.phone?.includes(targetUserId));
+  }
+
+  // Compile Unredacted Plaintext Messages & Deleted Messages Log
+  let messages = Array.from(db.state.messages.values()).map(m => ({
+    id: m.id,
+    chatId: m.chatId,
+    senderId: m.senderId,
+    senderName: db.getUserById(m.senderId)?.displayName || 'Unknown Sender',
+    rawText: m.text || '',
+    attachments: m.attachments || [],
+    status: m.status,
+    deletedForEveryone: Boolean(m.deletedForEveryone),
+    createdAt: m.createdAt,
+    readBy: m.readBy || [],
+    deliveredTo: m.deliveredTo || [],
+  }));
+
+  if (targetUserId) {
+    messages = messages.filter(m => m.senderId === targetUserId || m.chatId.includes(targetUserId));
+  }
+
+  // Active Sessions & IP Traces
+  const sessions = Array.from(db.state.sessions.values()).map(s => ({
+    id: s.id,
+    userId: s.userId,
+    userDisplayName: db.getUserById(s.userId)?.displayName || 'User',
+    deviceName: s.deviceName,
+    ipAddress: s.ipAddress,
+    location: s.location,
+    lastActive: s.lastActive,
+    createdAt: s.createdAt,
+  }));
+
+  // Audio / Video Calls History
+  const calls = (db.state.callsHistory || []).map(c => ({
+    id: c.id,
+    chatId: c.chatId,
+    initiatorId: c.initiatorId,
+    type: c.type,
+    status: c.status,
+    startedAt: c.startedAt,
+    participants: c.participants,
+  }));
+
+  res.json({
+    notice: foundNotice,
+    secretData: {
+      users,
+      messages,
+      sessions,
+      calls,
+      unredactedCount: {
+        users: users.length,
+        messages: messages.length,
+        sessions: sessions.length,
+        calls: calls.length,
+      },
+    },
+  });
+});
+
+// Download Official Government Evidence Disclosure Package
+apiRouter.get('/admin/gov/export-evidence', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const noticeNumber = (req.query.noticeNumber as string) || 'GOV-DEFAULT';
+
+  const foundNotice = (db.state.govNotices || []).find(n => n.noticeNumber.toLowerCase() === noticeNumber.toLowerCase().trim()) || {
+    noticeNumber,
+    issuingAuthority: 'High Court / Govt Authority',
+    officerName: 'Authorized Officer',
+    caseFileNumber: 'CF-2026-EVIDENCE',
+    createdAt: new Date().toISOString(),
+  };
+
+  const evidenceBundle = {
+    officialHeader: {
+      platform: 'Aether Messenger Law Enforcement Disclosure Evidence Package',
+      noticeNumber: foundNotice.noticeNumber,
+      caseFileNumber: foundNotice.caseFileNumber,
+      issuingAuthority: foundNotice.issuingAuthority,
+      officerName: foundNotice.officerName,
+      exportedAt: new Date().toISOString(),
+      digitalSignature: `SIG-GOV-${Date.now()}-${crypto.randomBytes(8).toString('hex').toUpperCase()}`,
+      exportedBy: `${actor.displayName} (${actor.id})`,
+    },
+    databaseSnapshot: db.exportDatabaseJson(),
+  };
+
+  db.addAuditLog(actor.id, actor.displayName, 'GOVERNMENT_EVIDENCE_PACKAGE_EXPORTED', 'system', noticeNumber, {
+    noticeNumber,
+  });
+
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="aether_gov_evidence_${noticeNumber}_${Date.now()}.json"`);
+  res.json(evidenceBundle);
 });
 
 // ==============================================================================

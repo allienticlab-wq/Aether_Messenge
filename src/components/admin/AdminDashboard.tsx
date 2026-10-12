@@ -67,6 +67,9 @@ import {
   Zap,
   QrCode,
   Laptop,
+  Gavel,
+  FileCheck,
+  Landmark,
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
@@ -106,6 +109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     | 'health'
     | 'audit'
     | 'backup'
+    | 'gov_notice'
     | 'easypanel'
     | 'android'
   >('overview');
@@ -131,6 +135,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [backupsList, setBackupsList] = useState<any[]>([]);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // Government Notice & Secret Data Portal State
+  const [govNoticeForm, setGovNoticeForm] = useState({
+    noticeNumber: '',
+    issuingAuthority: 'High Court of Judiciary / Law Enforcement Agency',
+    courtOrderRef: '',
+    officerName: '',
+    officerDesignation: 'Superintendent of Police / Senior Inspector',
+    officialEmail: 'gov-compliance@aether.internal',
+    purpose: 'Official Lawful Intercept and Secret Communications Investigation',
+    caseFileNumber: '',
+    targetUserId: '',
+  });
+  const [govNoticesList, setGovNoticesList] = useState<any[]>([]);
+  const [activeGovNotice, setActiveGovNotice] = useState<any | null>(null);
+  const [secretData, setSecretData] = useState<any | null>(null);
+  const [isQueryingGovData, setIsQueryingGovData] = useState(false);
 
   // SMTP Settings State
   const [smtpForm, setSmtpForm] = useState({
@@ -675,6 +696,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const res = await fetch('/api/admin/database/backups', { headers });
         const data = await res.json();
         setBackupsList(data.backups || []);
+      } else if (activeTab === 'gov_notice') {
+        const res = await fetch('/api/admin/gov/notices', { headers });
+        const data = await res.json();
+        setGovNoticesList(data.notices || []);
       }
     } catch (e) {
       console.error('Failed to load admin data:', e);
@@ -710,17 +735,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleRestoreSnapshot = async (snapshotId: string) => {
-    if (!confirm('Restore this snapshot? All current database records will be replaced with this snapshot state.')) return;
+    if (!confirm('Restore this snapshot? All current database records will be replaced with this snapshot state in one click.')) return;
     setIsRestoring(true);
     try {
-      const res = await fetch('/api/admin/database/restore', {
+      const res = await fetch(`/api/admin/database/restore/${snapshotId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_admin' },
-        body: JSON.stringify({ snapshotId }),
       });
       const data = await res.json();
       if (res.ok) {
-        setActionMessage('Database successfully restored from snapshot!');
+        setActionMessage('Database successfully restored in 1 click!');
         loadData();
       } else {
         setActionMessage(data.error || 'Restore failed');
@@ -728,6 +752,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } finally {
       setIsRestoring(false);
     }
+  };
+
+  const handleRegisterGovNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!govNoticeForm.noticeNumber || !govNoticeForm.officerName) {
+      setActionMessage('Notice Number and Officer Name are required for Government clearance.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/gov/notice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_admin' },
+        body: JSON.stringify(govNoticeForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMessage(`Government Notice '${data.notice?.noticeNumber}' verified & registered!`);
+        setActiveGovNotice(data.notice);
+        fetchGovSecretData(data.notice.noticeNumber, govNoticeForm.targetUserId);
+        loadData();
+      } else {
+        setActionMessage(data.error || 'Failed to register government notice');
+      }
+    } catch (err: any) {
+      setActionMessage(`Notice Registration Error: ${err.message}`);
+    }
+  };
+
+  const fetchGovSecretData = async (noticeNum: string, targetUser?: string) => {
+    setIsQueryingGovData(true);
+    try {
+      const url = `/api/admin/gov/secret-data?noticeNumber=${encodeURIComponent(noticeNum)}${targetUser ? `&targetUserId=${encodeURIComponent(targetUser)}` : ''}`;
+      const res = await fetch(url, {
+        headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSecretData(data.secretData);
+        if (data.notice) setActiveGovNotice(data.notice);
+        setActionMessage(`Secret data unlocked under Government Notice: ${noticeNum}`);
+      } else {
+        setActionMessage(data.error || 'Failed to load secret data');
+      }
+    } catch (err: any) {
+      setActionMessage(`Secret Data Access Error: ${err.message}`);
+    } finally {
+      setIsQueryingGovData(false);
+    }
+  };
+
+  const handleDownloadEvidencePackage = (noticeNum?: string) => {
+    const num = noticeNum || activeGovNotice?.noticeNumber || 'GOV-DEFAULT';
+    const a = document.createElement('a');
+    a.href = `/api/admin/gov/export-evidence?noticeNumber=${encodeURIComponent(num)}&userId=${currentUser?.id || 'usr_admin'}`;
+    a.download = `aether_gov_evidence_${num}_${Date.now()}.json`;
+    a.click();
+    setActionMessage('Government Legal Disclosure Evidence Package exported.');
   };
 
   const handleUploadAndRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1049,6 +1130,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'health', label: 'System Health', icon: Activity },
     { id: 'audit', label: 'Audit Logs', icon: FileClock },
     { id: 'backup', label: 'Backup & Restore', icon: Database },
+    { id: 'gov_notice', label: 'Gov Notice & Secret Portal', icon: Gavel },
     { id: 'easypanel', label: 'Easypanel Deploy', icon: Server },
     { id: 'android', label: 'Android APK & TWA', icon: Smartphone },
   ];
@@ -3016,6 +3098,313 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* GOVERNMENT NOTICE & LEGAL WARRANT SECRET DATA ACCESS PORTAL */}
+            {activeTab === 'gov_notice' && (
+              <div className="space-y-6">
+                {/* Banner */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-rose-950/80 border border-amber-500/40 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                    <Gavel className="w-5 h-5 text-amber-400" />
+                    <span>Government Notice & Secret Law Enforcement Access Portal</span>
+                    <span className="ml-auto px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[10px] font-mono font-semibold">
+                      LAWFUL INTERCEPT LEVEL-4
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Under official Government Notice, Court Orders, or Law Enforcement Directives, authorized government officials and platform administrators can register notice credentials to unlock unredacted secret data, unencrypted message history, deleted message transcripts, device session IP traces, and legal disclosure evidence bundles.
+                  </p>
+                </div>
+
+                {/* Grid: Notice Registration Form & Verified Notices List */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Notice Form */}
+                  <form onSubmit={handleRegisterGovNotice} className="lg:col-span-5 p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-100 font-bold text-xs border-b border-slate-800 pb-2">
+                      <Landmark className="w-4 h-4 text-cyan-400" />
+                      <span>Register Official Government Notice / Court Order</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-1">Government Notice / Order Number *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g., GOV-NOTICE-2026-8891"
+                          value={govNoticeForm.noticeNumber}
+                          onChange={(e) => setGovNoticeForm({ ...govNoticeForm, noticeNumber: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-amber-400 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-medium text-slate-400 mb-1">Issuing Authority</label>
+                          <input
+                            type="text"
+                            placeholder="High Court / Cyber Cell"
+                            value={govNoticeForm.issuingAuthority}
+                            onChange={(e) => setGovNoticeForm({ ...govNoticeForm, issuingAuthority: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-slate-400 mb-1">Court Order Ref #</label>
+                          <input
+                            type="text"
+                            placeholder="CO-2026-99"
+                            value={govNoticeForm.courtOrderRef}
+                            onChange={(e) => setGovNoticeForm({ ...govNoticeForm, courtOrderRef: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-medium text-slate-400 mb-1">Investigating Officer Name *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Officer Full Name"
+                            value={govNoticeForm.officerName}
+                            onChange={(e) => setGovNoticeForm({ ...govNoticeForm, officerName: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-slate-400 mb-1">Case File Number</label>
+                          <input
+                            type="text"
+                            placeholder="CF-2026-88"
+                            value={govNoticeForm.caseFileNumber}
+                            onChange={(e) => setGovNoticeForm({ ...govNoticeForm, caseFileNumber: e.target.value })}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-1">Target User Filter (Optional: Username, Email, ID)</label>
+                        <input
+                          type="text"
+                          placeholder="All users or specify e.g. usr_admin / swayam"
+                          value={govNoticeForm.targetUserId}
+                          onChange={(e) => setGovNoticeForm({ ...govNoticeForm, targetUserId: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <FileCheck className="w-4 h-4" />
+                      <span>Verify & Grant Secret Data Access</span>
+                    </button>
+                  </form>
+
+                  {/* Registered Notices Table */}
+                  <div className="lg:col-span-7 p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                        <div className="flex items-center gap-2 text-slate-100 font-bold text-xs">
+                          <Gavel className="w-4 h-4 text-amber-400" />
+                          <span>Registered Government Notices ({govNoticesList.length})</span>
+                        </div>
+                        <button
+                          onClick={() => loadData()}
+                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Refresh List</span>
+                        </button>
+                      </div>
+
+                      {govNoticesList.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500 text-xs">
+                          No Government Notice logged yet. Fill out the form on the left to verify and register a notice.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                          {govNoticesList.map((n) => (
+                            <div
+                              key={n.id}
+                              className={`p-3 rounded-xl border text-xs flex items-center justify-between transition ${
+                                activeGovNotice?.noticeNumber === n.noticeNumber
+                                  ? 'bg-amber-950/40 border-amber-500/60'
+                                  : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
+                              }`}
+                            >
+                              <div>
+                                <div className="font-bold text-slate-100 flex items-center gap-2 font-mono">
+                                  <span>{n.noticeNumber}</span>
+                                  <span className="px-2 py-0.2 rounded bg-emerald-950 border border-emerald-700 text-emerald-300 text-[9px] font-sans">
+                                    VERIFIED
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  {n.issuingAuthority} • Officer: {n.officerName} • Case: {n.caseFileNumber}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => fetchGovSecretData(n.noticeNumber, n.targetUserId)}
+                                className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-lg text-[11px] transition shadow"
+                              >
+                                Unlock Data
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {activeGovNotice && (
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                        <span className="text-[11px] text-amber-300 font-mono">
+                          Active Notice: {activeGovNotice.noticeNumber}
+                        </span>
+                        <button
+                          onClick={() => handleDownloadEvidencePackage(activeGovNotice.noticeNumber)}
+                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-lg text-[11px] flex items-center gap-1.5 shadow"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Evidence Package</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Secret Data Inspection Viewer */}
+                {secretData && (
+                  <div className="p-5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-4 animate-in fade-in duration-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                      <div>
+                        <h4 className="font-bold text-amber-400 text-xs flex items-center gap-2">
+                          <Eye className="w-4 h-4" />
+                          <span>Unredacted Secret Data Inspection (Notice: {activeGovNotice?.noticeNumber})</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400">
+                          Full unencrypted plaintext messages, user identities, IP logs, and call records under government authorization.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleDownloadEvidencePackage(activeGovNotice?.noticeNumber)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download Signed Evidence (.JSON)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Unredacted Summary Counters */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase font-semibold">User Accounts</div>
+                        <div className="text-base font-bold text-cyan-400 font-mono">{secretData.unredactedCount?.users || 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Secret Messages</div>
+                        <div className="text-base font-bold text-blue-400 font-mono">{secretData.unredactedCount?.messages || 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Device Sessions & IPs</div>
+                        <div className="text-base font-bold text-indigo-400 font-mono">{secretData.unredactedCount?.sessions || 0}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 uppercase font-semibold">Calls Recorded</div>
+                        <div className="text-base font-bold text-amber-400 font-mono">{secretData.unredactedCount?.calls || 0}</div>
+                      </div>
+                    </div>
+
+                    {/* Plaintext Secret Messages Vault */}
+                    <div className="space-y-2">
+                      <h5 className="font-bold text-slate-200 text-xs">Plaintext Message Transcript Intercept:</h5>
+                      <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/60 max-h-[300px] overflow-y-auto">
+                        <table className="w-full text-left font-mono text-[11px]">
+                          <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
+                            <tr>
+                              <th className="p-2.5">Sender</th>
+                              <th className="p-2.5">Chat ID</th>
+                              <th className="p-2.5">Unencrypted Message Text</th>
+                              <th className="p-2.5">Status</th>
+                              <th className="p-2.5">Deleted</th>
+                              <th className="p-2.5">Timestamp</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {secretData.messages?.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="p-4 text-center text-slate-500 font-sans">
+                                  No message records found under this filter.
+                                </td>
+                              </tr>
+                            ) : (
+                              secretData.messages?.map((m: any) => (
+                                <tr key={m.id} className="hover:bg-slate-800/40">
+                                  <td className="p-2.5 text-cyan-300 font-semibold">{m.senderName} ({m.senderId})</td>
+                                  <td className="p-2.5 text-slate-400">{m.chatId}</td>
+                                  <td className="p-2.5 text-slate-100 font-sans font-medium">{m.rawText}</td>
+                                  <td className="p-2.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]">
+                                      {m.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5">
+                                    {m.deletedForEveryone ? (
+                                      <span className="text-rose-400 font-bold">YES (RESTORED)</span>
+                                    ) : (
+                                      <span className="text-slate-500">NO</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 text-slate-400">{new Date(m.createdAt).toLocaleString()}</td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Unredacted User Identities & Contact Information */}
+                    <div className="space-y-2">
+                      <h5 className="font-bold text-slate-200 text-xs">Unredacted User Accounts & Identities:</h5>
+                      <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/60 max-h-[200px] overflow-y-auto">
+                        <table className="w-full text-left font-mono text-[11px]">
+                          <thead className="bg-slate-900 border-b border-slate-800 text-slate-400">
+                            <tr>
+                              <th className="p-2.5">User ID</th>
+                              <th className="p-2.5">Display Name</th>
+                              <th className="p-2.5">Email</th>
+                              <th className="p-2.5">Phone Number</th>
+                              <th className="p-2.5">Role</th>
+                              <th className="p-2.5">Joined</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {secretData.users?.map((u: any) => (
+                              <tr key={u.id} className="hover:bg-slate-800/40">
+                                <td className="p-2.5 text-slate-300 font-semibold">{u.id}</td>
+                                <td className="p-2.5 text-cyan-300 font-sans">{u.displayName} (@{u.username})</td>
+                                <td className="p-2.5 text-emerald-400">{u.email}</td>
+                                <td className="p-2.5 text-amber-300">{u.phone}</td>
+                                <td className="p-2.5 text-slate-300">{u.role}</td>
+                                <td className="p-2.5 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

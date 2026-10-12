@@ -95,6 +95,7 @@ class Database {
       outboxEmails: [],
       outboxSms: [],
       backups: [],
+      govNotices: [],
       featureFlags: {
         voiceNotes: true,
         videoCalls: true,

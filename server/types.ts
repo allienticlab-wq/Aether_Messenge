@@ -123,4 +123,19 @@ export interface ServerState {
     sizeBytes: number;
     data: any;
   }[];
+  govNotices?: {
+    id: string;
+    noticeNumber: string;
+    issuingAuthority: string;
+    courtOrderRef: string;
+    officerName: string;
+    officerDesignation: string;
+    officialEmail: string;
+    purpose: string;
+    caseFileNumber: string;
+    targetUserId?: string;
+    loggedBy: string;
+    createdAt: string;
+    status: 'verified' | 'active' | 'archived';
+  }[];
 }

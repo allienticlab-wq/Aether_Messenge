@@ -387,6 +387,38 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 break;
               }
 
+              case 'message_delivered': {
+                const { chatId, messageId, status, deliveredTo } = payload;
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.chatId !== chatId) return m;
+                    if (messageId && m.id !== messageId) return m;
+                    if (m.status === 'read') return m; // Do not downgrade read to delivered
+                    return {
+                      ...m,
+                      status: status || 'delivered',
+                      deliveredTo: deliveredTo || m.deliveredTo,
+                    };
+                  })
+                );
+                setChats((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== chatId) return c;
+                    if (c.lastMessage && (c.lastMessage.id === messageId || !messageId) && c.lastMessage.status !== 'read') {
+                      return {
+                        ...c,
+                        lastMessage: {
+                          ...c.lastMessage,
+                          status: status || 'delivered',
+                        },
+                      };
+                    }
+                    return c;
+                  })
+                );
+                break;
+              }
+
               case 'messages_read': {
                 const { chatId, userId, messageIds, readAt } = payload;
                 const effectiveReadAt = readAt || new Date().toISOString();
