@@ -2864,19 +2864,23 @@ apiRouter.get('/admin/outbox', requireAuth, requireRole(['super_admin', 'admin',
 });
 
 // Test Email and SMS
-apiRouter.post('/admin/email/send-test', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
+apiRouter.post('/admin/email/send-test', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
   const { toEmail, template } = req.body;
-  const target = toEmail || 'test@example.com';
-  const rendered = renderEmailTemplate(template || 'welcome', { recipientName: 'Valued Administrator' }, db.state.branding);
-  db.state.outboxEmails.unshift({
-    id: `email_test_${Date.now()}`,
+  const target = toEmail || 'swayamsiddhantn@gmail.com';
+
+  const result = await sendMailgunEmail({
     to: target,
-    subject: `[TEST] ${rendered.subject}`,
-    html: rendered.html,
     template: template || 'welcome',
-    sentAt: new Date().toISOString(),
+    recipientName: 'Valued Administrator',
   });
-  res.json({ success: true, message: `Test email (${template || 'welcome'}) logged and dispatched to ${target}` });
+
+  res.json({
+    success: result.success,
+    result,
+    message: result.success
+      ? `Test email (${template || 'welcome'}) dispatched to ${target} via ${result.mode || 'Mailgun'} (Message ID: ${result.messageId})`
+      : `Failed to dispatch test email to ${target}: ${result.error || 'SMTP delivery error'}`,
+  });
 });
 
 apiRouter.post('/admin/sms/send-test', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {

@@ -10,6 +10,7 @@ export interface SendMailOptions {
   template?: string;
   data?: Record<string, any>;
   recipientName?: string;
+  customConfig?: Partial<SmtpConfig>;
 }
 
 export interface MailDeliveryResult {
@@ -18,10 +19,11 @@ export interface MailDeliveryResult {
   status: 'delivered' | 'failed' | 'simulated';
   error?: string;
   outboxId: string;
+  mode?: 'rest_api' | 'smtp' | 'sandbox';
 }
 
 /**
- * Creates a Nodemailer transporter using the current SMTP/Mailgun configuration
+ * Creates a Nodemailer transporter using current or custom SMTP configuration
  */
 export function getMailgunTransporter(customConfig?: Partial<SmtpConfig>) {
   const config = customConfig
@@ -47,39 +49,41 @@ export function getMailgunTransporter(customConfig?: Partial<SmtpConfig>) {
         }
       : undefined,
     tls: {
-      rejectUnauthorized: false, // Prevents self-signed/proxy cert rejection in testing
+      rejectUnauthorized: false,
     },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
   });
 
   return { transporter, hasCredentials, host, port, user, config };
 }
 
 /**
- * Dispatches an email through Mailgun SMTP, Mailgun REST API, or simulated sandbox
+ * Dispatches an email through Mailgun REST API, Mailgun SMTP, or simulated outbox
  */
 export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDeliveryResult> {
-  const { to, template, data = {}, recipientName } = options;
+  const { to, template, data = {}, recipientName, customConfig } = options;
   const outboxId = `email_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
 
-  // If template is specified, render subject and html
   let subject = options.subject || '';
   let html = options.html || '';
 
   if (template) {
     const rendered = renderEmailTemplate(
       template,
-      { ...data, recipientName: recipientName || data.recipientName },
+      { ...data, recipientName: recipientName || data.recipientName || 'Valued User' },
       db.state.branding
     );
     subject = subject || rendered.subject;
     html = html || rendered.html;
   }
 
-  const { transporter, hasCredentials, config } = getMailgunTransporter();
+  const { transporter, hasCredentials, config } = getMailgunTransporter(customConfig);
   const fromAddress = `"${config.fromName || db.state.branding.appName}" <${config.fromEmail || 'security@mg.aether.xperiserv.in'}>`;
 
-  // 1. If Mailgun REST API credentials are configured, can also use Mailgun API
+  // 1. Mailgun REST API Option
   if (config.mailgunApiKey && config.mailgunDomain) {
     try {
       const endpoint = `https://api.mailgun.net/v3/${config.mailgunDomain}/messages`;
@@ -100,7 +104,7 @@ export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDe
       });
 
       if (apiRes.ok) {
-        const body = await apiRes.json() as any;
+        const body = (await apiRes.json()) as any;
         const messageId = body.id || `mg_${Date.now()}`;
         db.state.outboxEmails.unshift({
           id: outboxId,
@@ -118,14 +122,18 @@ export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDe
           messageId,
           status: 'delivered',
           outboxId,
+          mode: 'rest_api',
         };
+      } else {
+        const errText = await apiRes.text();
+        console.warn(`Mailgun REST API send failed (HTTP ${apiRes.status}):`, errText);
       }
     } catch (err: any) {
-      console.warn('Mailgun API send error, falling back to SMTP:', err?.message);
+      console.warn('Mailgun API send exception, trying SMTP:', err?.message);
     }
   }
 
-  // 2. If SMTP credentials exist, send via Mailgun SMTP
+  // 2. SMTP Transporter Option
   if (hasCredentials) {
     try {
       const info = await transporter.sendMail({
@@ -151,11 +159,11 @@ export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDe
         messageId: info.messageId,
         status: 'delivered',
         outboxId,
+        mode: 'smtp',
       };
     } catch (err: any) {
       console.error('Mailgun SMTP dispatch error:', err?.message || err);
 
-      // Record failure in outbox
       db.state.outboxEmails.unshift({
         id: outboxId,
         to,
@@ -164,20 +172,20 @@ export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDe
         template: template || 'custom',
         sentAt: now,
         status: 'failed',
-        error: err?.message || 'SMTP Connection failed',
+        error: err?.message || 'SMTP dispatch failure',
       });
 
       return {
         success: false,
         status: 'failed',
-        error: err?.message || 'SMTP Connection failed',
+        error: err?.message || 'SMTP dispatch failure',
         outboxId,
+        mode: 'smtp',
       };
     }
   }
 
-  // 3. Simulated Sandbox Mode (Credentials not yet entered by user/admin)
-  // Store in outbox so user can inspect OTP codes and emails seamlessly!
+  // 3. Simulated Sandbox Outbox Mode
   db.state.outboxEmails.unshift({
     id: outboxId,
     to,
@@ -194,28 +202,88 @@ export async function sendMailgunEmail(options: SendMailOptions): Promise<MailDe
     status: 'simulated',
     messageId: `sim_${Date.now()}`,
     outboxId,
+    mode: 'sandbox',
   };
 }
 
 /**
- * Validates connection handshake to the Mailgun SMTP server
+ * Validates connection handshake to the Mailgun REST API or SMTP server
  */
 export async function testMailgunSmtpConnection(testConfig?: Partial<SmtpConfig>): Promise<{
   success: boolean;
   message: string;
   error?: string;
+  host?: string;
+  port?: number;
+  mode?: 'rest_api' | 'smtp' | 'sandbox';
 }> {
+  const config = testConfig
+    ? { ...db.state.smtpConfig, ...testConfig }
+    : db.state.smtpConfig;
+
+  // 1. Test Mailgun REST API if API Key & Domain provided
+  if (config.mailgunApiKey && config.mailgunDomain) {
+    try {
+      const endpoint = `https://api.mailgun.net/v3/domains/${config.mailgunDomain}`;
+      const authHeader = 'Basic ' + Buffer.from(`api:${config.mailgunApiKey}`).toString('base64');
+      const apiRes = await fetch(endpoint, {
+        method: 'GET',
+        headers: { Authorization: authHeader },
+      });
+
+      if (apiRes.ok) {
+        return {
+          success: true,
+          mode: 'rest_api',
+          host: 'api.mailgun.net',
+          port: 443,
+          message: `Mailgun REST API Key & Domain (${config.mailgunDomain}) verified successfully!`,
+        };
+      } else {
+        const bodyText = await apiRes.text();
+        return {
+          success: false,
+          mode: 'rest_api',
+          host: 'api.mailgun.net',
+          port: 443,
+          message: `Mailgun REST API connection failed (HTTP ${apiRes.status}): ${bodyText || apiRes.statusText}`,
+          error: `HTTP ${apiRes.status}`,
+        };
+      }
+    } catch (err: any) {
+      console.warn('Mailgun API key check exception, checking SMTP next:', err?.message);
+    }
+  }
+
+  // 2. Test SMTP connection via Nodemailer
+  const { transporter, hasCredentials, host, port, user } = getMailgunTransporter(config);
+
+  if (!hasCredentials) {
+    return {
+      success: true,
+      mode: 'sandbox',
+      host,
+      port,
+      message: `SMTP Sandbox Mode active. Enter SMTP Username & Password or Mailgun API Key for live email dispatch.`,
+    };
+  }
+
   try {
-    const { transporter, host, port, user } = getMailgunTransporter(testConfig);
     await transporter.verify();
     return {
       success: true,
-      message: `Successfully connected and authenticated with Mailgun SMTP server at ${host}:${port} as ${user || 'anonymous'}!`,
+      mode: 'smtp',
+      host,
+      port,
+      message: `Successfully connected and authenticated with Mailgun SMTP server at ${host}:${port} as ${user}!`,
     };
   } catch (err: any) {
     return {
       success: false,
-      message: `Failed to connect to SMTP server: ${err?.message || 'Connection refused or timeout'}`,
+      mode: 'smtp',
+      host,
+      port,
+      message: `SMTP Connection / Handshake Error: ${err?.message || 'Connection refused or authentication failed'}`,
       error: err?.message || String(err),
     };
   }

@@ -975,13 +975,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSendTestEmail = async () => {
-    await fetch('/api/admin/email/send-test', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_admin' },
-      body: JSON.stringify({ toEmail: testEmailTo, template: previewTemplate }),
-    });
-    setActionMessage(`Test email (${previewTemplate}) sent to ${testEmailTo}`);
-    loadData();
+    setIsTestingSmtp(true);
+    try {
+      const res = await fetch('/api/admin/email/send-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser?.id || 'usr_admin' },
+        body: JSON.stringify({ toEmail: testEmailTo, template: previewTemplate }),
+      });
+      const data = await res.json();
+      setSmtpTestResult(data.result ? {
+        success: data.success,
+        message: data.message,
+        host: smtpForm.host,
+        port: smtpForm.port,
+        mode: data.result?.mode,
+        error: data.result?.error,
+      } : {
+        success: data.success,
+        message: data.message,
+        host: smtpForm.host,
+        port: smtpForm.port,
+      });
+      setActionMessage(data.message || `Test email dispatched to ${testEmailTo}`);
+      loadData();
+    } catch (err: any) {
+      setSmtpTestResult({ success: false, error: err?.message || 'Network error sending test email' });
+      setActionMessage(`Failed to send test email: ${err?.message || 'Network error'}`);
+    } finally {
+      setIsTestingSmtp(false);
+    }
   };
 
   const handleSendTestSms = async () => {
