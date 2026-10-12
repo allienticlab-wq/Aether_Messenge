@@ -57,8 +57,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Security Form
   const [sessions, setSessions] = useState<UserSession[]>([]);
   const [emailOtp, setEmailOtp] = useState('');
-  const [phoneOtp, setPhoneOtp] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [mfaData, setMfaData] = useState<{ secret: string; otpAuthUrl: string; backupCodes: string[] } | null>(null);
   const [mfaVerifyCode, setMfaVerifyCode] = useState('');
   const [passkeyDeviceName, setPasskeyDeviceName] = useState('My Security Key');
@@ -74,7 +72,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setReadReceipts(currentUser.privacy.readReceipts);
       setTypingIndicators(currentUser.privacy.typingIndicators);
       setCallPermissions(currentUser.privacy.callPermissions);
-      setPhoneNumber(currentUser.phone || '');
     }
   }, [currentUser]);
 
@@ -135,32 +132,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await refreshUser();
     } else {
       setNotificationMsg({ type: 'error', text: data.error || 'Failed to verify email.' });
-    }
-  };
-
-  const handleRequestPhoneOtp = async () => {
-    const res = await fetch('/api/verification/phone/request-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
-      body: JSON.stringify({ phone: phoneNumber }),
-    });
-    const data = await res.json();
-    setNotificationMsg({ type: res.ok ? 'success' : 'error', text: data.message || data.error });
-  };
-
-  const handleVerifyPhoneOtp = async () => {
-    const res = await fetch('/api/verification/phone/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
-      body: JSON.stringify({ code: phoneOtp }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setNotificationMsg({ type: 'success', text: 'Phone successfully verified!' });
-      setPhoneOtp('');
-      await refreshUser();
-    } else {
-      setNotificationMsg({ type: 'error', text: data.error || 'Failed to verify phone.' });
     }
   };
 
@@ -342,7 +313,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                       <span className="font-mono">@{currentUser.username}</span>
-                      {currentUser.phone && <span>&bull; {currentUser.phone}</span>}
+                      {currentUser.email && <span>&bull; {currentUser.email}</span>}
                     </div>
                     {currentUser.verificationStatus === 'verified' && (
                       <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-700/50 text-[10px] text-cyan-300 font-medium">
@@ -562,53 +533,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       Verify
                     </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Phone SMS Verification */}
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-200">Phone SMS OTP:</span>
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${currentUser.phoneVerified ? 'bg-cyan-950 text-cyan-400 border border-cyan-800/50' : 'bg-amber-950 text-amber-400 border border-amber-800/50'}`}>
-                      {currentUser.phoneVerified ? 'Verified' : 'Unverified'}
-                    </span>
-                  </div>
-                  {!currentUser.phoneVerified && (
-                    <button
-                      onClick={handleRequestPhoneOtp}
-                      className="px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-                    >
-                      Send SMS OTP
-                    </button>
-                  )}
-                </div>
-                {!currentUser.phoneVerified && (
-                  <div className="space-y-2">
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="+14155550199"
-                      className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500"
-                    />
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={phoneOtp}
-                        onChange={(e) => setPhoneOtp(e.target.value)}
-                        placeholder="Enter 6-digit SMS OTP"
-                        className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono tracking-wider focus:outline-none focus:border-cyan-500"
-                      />
-                      <button
-                        onClick={handleVerifyPhoneOtp}
-                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-semibold rounded-lg transition"
-                      >
-                        Verify Phone
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
@@ -861,28 +785,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* 6. DATA & LEGAL */}
           {activeTab === 'account' && (
             <div className="space-y-5">
-              {/* Admin Portal Gateway */}
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-cyan-800/60 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-cyan-300 flex items-center gap-1.5">
-                    <Shield className="w-4 h-4 text-cyan-400" />
-                    <span>Admin Operations Portal</span>
+              {/* Admin Portal Gateway (Admin ONLY) */}
+              {currentUser && (currentUser.role === 'super_admin' || currentUser.role === 'admin') && (
+                <div className="p-4 rounded-xl bg-slate-950/50 border border-cyan-800/60 flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-cyan-400" />
+                      <span>Admin Operations Portal</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">Direct portal for user moderation, Mailgun SMTP setup, and system diagnostics.</div>
                   </div>
-                  <div className="text-[11px] text-slate-400">Direct portal for user moderation, Mailgun SMTP setup, and system diagnostics.</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      window.history.pushState({}, '', '/admin');
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-200 font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Admin (/admin)</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    window.history.pushState({}, '', '/admin');
-                    window.dispatchEvent(new PopStateEvent('popstate'));
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-200 font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Admin (/admin)</span>
-                </button>
-              </div>
+              )}
 
               {/* Android Native App (.APK / TWA) */}
               <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">

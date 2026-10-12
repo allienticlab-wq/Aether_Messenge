@@ -16,7 +16,6 @@ import {
   Check,
   Shield,
   Smartphone,
-  Phone,
   CheckCircle2,
   AlertCircle,
   X,
@@ -27,26 +26,13 @@ import {
 interface UnifiedAuthViewProps {
   mode?: 'fullscreen' | 'modal';
   onClose?: () => void;
-  defaultTab?: 'phone' | 'otp' | 'password' | 'signup' | 'qr';
+  defaultTab?: 'otp' | 'password' | 'signup' | 'qr';
 }
-
-const COUNTRY_CODES = [
-  { code: '+91', country: 'IN', label: 'India (+91)' },
-  { code: '+1', country: 'US', label: 'United States (+1)' },
-  { code: '+44', country: 'GB', label: 'United Kingdom (+44)' },
-  { code: '+971', country: 'AE', label: 'UAE (+971)' },
-  { code: '+65', country: 'SG', label: 'Singapore (+65)' },
-  { code: '+61', country: 'AU', label: 'Australia (+61)' },
-  { code: '+49', country: 'DE', label: 'Germany (+49)' },
-  { code: '+33', country: 'FR', label: 'France (+33)' },
-  { code: '+81', country: 'JP', label: 'Japan (+81)' },
-  { code: '+86', country: 'CN', label: 'China (+86)' },
-];
 
 export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   mode = 'fullscreen',
   onClose,
-  defaultTab = 'phone',
+  defaultTab = 'otp',
 }) => {
   const {
     login,
@@ -54,24 +40,13 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     verifyEmailLoginOtp,
     requestEmailSignupOtp,
     verifyEmailSignupOtp,
-    requestPhoneOtp,
-    verifyPhoneOtp,
     generateQrSession,
     checkQrStatus,
   } = useAuth();
   const { branding } = useBranding();
 
-  // Active form tab: 'phone' | 'otp' | 'password' | 'signup' | 'qr'
-  const [activeTab, setActiveTab] = useState<'phone' | 'otp' | 'password' | 'signup' | 'qr'>(defaultTab);
-
-  // Phone Login States (WhatsApp signature pattern)
-  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [phoneStep, setPhoneStep] = useState<1 | 2>(1);
-  const [phoneOtpDigits, setPhoneOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [phoneVerificationId, setPhoneVerificationId] = useState<string>('');
-  const [phoneCountdown, setPhoneCountdown] = useState(60);
-  const [canResendPhoneOtp, setCanResendPhoneOtp] = useState(false);
+  // Active form tab: 'otp' | 'password' | 'signup' | 'qr'
+  const [activeTab, setActiveTab] = useState<'otp' | 'password' | 'signup' | 'qr'>(defaultTab);
 
   // Email OTP Login States
   const [otpStep, setOtpStep] = useState<1 | 2>(1);
@@ -114,23 +89,6 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const pollTimerRef = useRef<any>(null);
-
-  // Countdown timer for Phone OTP
-  useEffect(() => {
-    let timer: any;
-    if (phoneStep === 2 && phoneCountdown > 0) {
-      timer = setInterval(() => {
-        setPhoneCountdown((prev) => {
-          if (prev <= 1) {
-            setCanResendPhoneOtp(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [phoneStep, phoneCountdown]);
 
   // Countdown timer for Email Login OTP
   useEffect(() => {
@@ -265,95 +223,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
   // Action Handlers
   // ---------------------------------------------------------------------------
 
-  // 1. Phone OTP Request
-  const handleRequestPhoneOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanNumber = phoneNumber.replace(/\D/g, '');
-    if (cleanNumber.length < 7) {
-      setErrorMsg('Please enter a valid phone number');
-      return;
-    }
-
-    setIsSubmitting(true);
-    setErrorMsg(null);
-    try {
-      const cCode = phoneCountryCode.replace('+', '');
-      const res = await requestPhoneOtp(cleanNumber, cCode, 'SMS');
-      if (!res.success) {
-        setErrorMsg(res.error || 'Failed to send phone verification code.');
-        return;
-      }
-
-      if (res.verificationId) setPhoneVerificationId(res.verificationId);
-      setPhoneStep(2);
-      setPhoneCountdown(60);
-      setCanResendPhoneOtp(false);
-      setPhoneOtpDigits(['', '', '', '', '', '']);
-      setSuccessMsg(`Verification code sent to ${phoneCountryCode} ${cleanNumber}`);
-      setTimeout(() => {
-        document.getElementById('phone-otp-box-0')?.focus();
-      }, 100);
-    } catch {
-      setErrorMsg('Network error while requesting phone passcode.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // 2. Verify Phone OTP
-  const handleVerifyPhoneOtp = async (overrideDigits?: string[]) => {
-    const code = (overrideDigits || phoneOtpDigits).join('');
-    if (code.length < 6) {
-      setErrorMsg('Please enter the complete 6-digit code');
-      return;
-    }
-
-    const cleanNumber = phoneNumber.replace(/\D/g, '');
-    setIsSubmitting(true);
-    setErrorMsg(null);
-    try {
-      const cCode = phoneCountryCode.replace('+', '');
-      const res = await verifyPhoneOtp(cleanNumber, code, phoneVerificationId, cCode);
-      if (!res.success) {
-        setErrorMsg(res.error || 'Invalid or expired phone verification code.');
-        return;
-      }
-
-      setSuccessMsg('Phone verified successfully! Opening conversations...');
-      setTimeout(() => {
-        if (onClose) onClose();
-        else window.location.href = '/';
-      }, 600);
-    } catch {
-      setErrorMsg('Failed to verify phone code.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Resend Phone OTP
-  const handleResendPhoneOtp = async () => {
-    if (!canResendPhoneOtp || isSubmitting) return;
-    setIsSubmitting(true);
-    setErrorMsg(null);
-    try {
-      const cleanNumber = phoneNumber.replace(/\D/g, '');
-      const cCode = phoneCountryCode.replace('+', '');
-      const res = await requestPhoneOtp(cleanNumber, cCode, 'SMS');
-      if (res.success) {
-        setPhoneCountdown(60);
-        setCanResendPhoneOtp(false);
-        if (res.verificationId) setPhoneVerificationId(res.verificationId);
-        setSuccessMsg('New verification code sent to your phone.');
-      } else {
-        setErrorMsg(res.error || 'Failed to resend phone code.');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // 3. Email OTP Request
+  // 1. Email OTP Request
   const handleRequestLoginOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpIdentifier.trim()) {
@@ -553,49 +423,6 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
     }
   };
 
-  // Helper for Phone OTP Digits
-  const handlePhoneOtpChange = (index: number, val: string) => {
-    if (val.length > 1) val = val.slice(-1);
-    if (val && !/^\d$/.test(val)) return;
-
-    const updated = [...phoneOtpDigits];
-    updated[index] = val;
-    setPhoneOtpDigits(updated);
-
-    if (val && index < 5) {
-      document.getElementById(`phone-otp-box-${index + 1}`)?.focus();
-    }
-
-    if (updated.every((d) => d !== '')) {
-      handleVerifyPhoneOtp(updated);
-    }
-  };
-
-  const handlePhoneOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !phoneOtpDigits[index] && index > 0) {
-      document.getElementById(`phone-otp-box-${index - 1}`)?.focus();
-    }
-  };
-
-  const handlePhoneOtpPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pasted) return;
-
-    const updated = [...phoneOtpDigits];
-    for (let i = 0; i < 6; i++) {
-      updated[i] = pasted[i] || '';
-    }
-    setPhoneOtpDigits(updated);
-
-    const targetIdx = Math.min(pasted.length, 5);
-    document.getElementById(`phone-otp-box-${targetIdx}`)?.focus();
-
-    if (pasted.length === 6) {
-      setTimeout(() => handleVerifyPhoneOtp(updated), 80);
-    }
-  };
-
   // Helper for Email OTP Digits
   const handleLoginOtpChange = (index: number, val: string) => {
     if (val.length > 1) val = val.slice(-1);
@@ -715,14 +542,15 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-2.5 text-xs">
             <a
-              href="/admin"
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-800 transition flex items-center gap-1.5 text-xs font-medium"
-              title="Open System Admin Operations"
+              href="/downloads/aether-android-project.zip"
+              download="aether-android-project.zip"
+              className="px-3 py-1.5 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 transition flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+              title="Download Android Studio Project (.zip) configured for https://aether.xperiserv.in/"
             >
-              <Shield className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Admin Portal</span>
+              <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Android App (.zip)</span>
             </a>
           </div>
         </header>
@@ -773,9 +601,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         ? 'Password Sign In'
                         : activeTab === 'qr'
                         ? 'Link with QR Code'
-                        : activeTab === 'otp'
-                        ? 'Sign In with Email'
-                        : 'Sign In with Phone'}
+                        : 'Sign In with Email'}
                     </h1>
                   </div>
                 </div>
@@ -785,32 +611,13 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                     : activeTab === 'password'
                     ? 'Sign in using your account username and password.'
                     : activeTab === 'qr'
-                    ? 'Point your mobile phone camera to link your account instantly.'
-                    : activeTab === 'otp'
-                    ? 'Enter your registered email address to receive a 6-digit passcode.'
-                    : 'Enter your phone number to receive a 6-digit verification code.'}
+                    ? 'Point your camera to link your account instantly.'
+                    : 'Enter your registered email address to receive a 6-digit passcode.'}
                 </p>
               </div>
 
-              {/* Segmented Auth Navigation Tabs (WhatsApp Inspired) */}
+              {/* Segmented Auth Navigation Tabs */}
               <div className="flex items-center gap-1 p-1 bg-slate-950/90 border border-slate-800 rounded-xl overflow-x-auto text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('phone');
-                    setErrorMsg(null);
-                    setSuccessMsg(null);
-                  }}
-                  className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer ${
-                    activeTab === 'phone'
-                      ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-semibold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-                  }`}
-                >
-                  <Phone className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Phone</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => {
@@ -825,7 +632,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                   }`}
                 >
                   <Mail className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Email</span>
+                  <span>Email Code</span>
                 </button>
 
                 <button
@@ -897,164 +704,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
               )}
 
               {/* ----------------------------------------------------------- */}
-              {/* TAB 1: PHONE NUMBER AUTHENTICATION (WhatsApp Flow)          */}
-              {/* ----------------------------------------------------------- */}
-              {activeTab === 'phone' && (
-                <div>
-                  {phoneStep === 1 ? (
-                    <form onSubmit={handleRequestPhoneOtp} className="space-y-4">
-                      <div>
-                        <label className="block text-slate-300 text-xs font-medium mb-1.5">
-                          Phone Number
-                        </label>
-                        <div className="flex gap-2">
-                          <select
-                            value={phoneCountryCode}
-                            onChange={(e) => setPhoneCountryCode(e.target.value)}
-                            className="bg-slate-950/90 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono shrink-0 cursor-pointer"
-                          >
-                            {COUNTRY_CODES.map((c) => (
-                              <option key={c.code} value={c.code} className="bg-slate-900 text-slate-200">
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="relative flex-1">
-                            <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                            <input
-                              type="tel"
-                              value={phoneNumber}
-                              onChange={(e) => setPhoneNumber(e.target.value)}
-                              placeholder="98765 43210"
-                              className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-medium tracking-wide"
-                              autoFocus
-                              required
-                            />
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-slate-400 mt-1.5">
-                          We will send a 6-digit one-time verification passcode via SMS.
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <input
-                          type="checkbox"
-                          id="remember-phone"
-                          checked={rememberDevice}
-                          onChange={(e) => setRememberDevice(e.target.checked)}
-                          className="w-4 h-4 rounded bg-slate-950 border-slate-800 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer accent-cyan-500"
-                        />
-                        <label htmlFor="remember-phone" className="text-xs text-slate-400 cursor-pointer select-none">
-                          Stay logged in on this browser
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Sending Code...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>Continue</span>
-                            <ArrowRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  ) : (
-                    /* Step 2: 6-Box OTP Entry */
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs text-slate-300 font-medium block">
-                            Enter the 6-digit code sent to:
-                          </span>
-                          <span className="text-xs font-mono text-cyan-300 font-semibold">
-                            {phoneCountryCode} {phoneNumber}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPhoneStep(1);
-                            setErrorMsg(null);
-                          }}
-                          className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <ArrowLeft className="w-3 h-3" />
-                          <span>Change number</span>
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-1.5 sm:gap-2">
-                        {phoneOtpDigits.map((digit, idx) => (
-                          <input
-                            key={idx}
-                            id={`phone-otp-box-${idx}`}
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={1}
-                            value={digit}
-                            onChange={(e) => handlePhoneOtpChange(idx, e.target.value)}
-                            onKeyDown={(e) => handlePhoneOtpKeyDown(idx, e)}
-                            onPaste={idx === 0 ? handlePhoneOtpPaste : undefined}
-                            className={`w-11 h-12 sm:w-12 sm:h-14 text-center text-lg sm:text-xl font-mono font-bold rounded-xl border bg-slate-950 transition focus:outline-none ${
-                              digit
-                                ? 'border-cyan-400 text-cyan-300 shadow-sm shadow-cyan-500/20'
-                                : 'border-slate-800 text-slate-100 focus:border-cyan-500'
-                            }`}
-                          />
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleVerifyPhoneOtp()}
-                        disabled={isSubmitting || phoneOtpDigits.join('').length < 6}
-                        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Verifying Code...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check className="w-4 h-4" />
-                            <span>Verify &amp; Continue</span>
-                          </>
-                        )}
-                      </button>
-
-                      <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                        <span>Didn&apos;t receive code?</span>
-                        {canResendPhoneOtp ? (
-                          <button
-                            type="button"
-                            onClick={handleResendPhoneOtp}
-                            disabled={isSubmitting}
-                            className="text-cyan-400 hover:underline font-semibold cursor-pointer"
-                          >
-                            Resend Code
-                          </button>
-                        ) : (
-                          <span className="font-mono text-slate-500">Resend in {phoneCountdown}s</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ----------------------------------------------------------- */}
-              {/* TAB 2: EMAIL OTP AUTHENTICATION                             */}
+              {/* TAB 1: EMAIL OTP AUTHENTICATION                             */}
               {/* ----------------------------------------------------------- */}
               {activeTab === 'otp' && (
                 <div>
@@ -1210,7 +860,7 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                         type="text"
                         value={pwdIdentifier}
                         onChange={(e) => setPwdIdentifier(e.target.value)}
-                        placeholder="admin or user@example.com"
+                        placeholder="Username or email address"
                         className="w-full pl-10 pr-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-slate-100 text-xs focus:outline-none focus:border-cyan-500 transition font-medium"
                         autoFocus
                         required
@@ -1593,12 +1243,12 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setActiveTab('phone');
+                    setActiveTab('otp');
                     setErrorMsg(null);
                   }}
                   className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
                 >
-                  Link with phone number instead &rarr;
+                  Sign in with email instead &rarr;
                 </button>
               </div>
             </div>

@@ -3152,8 +3152,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="pl-7 space-y-2 text-[11px] text-slate-300">
                       <p>Click the <strong>Deploy</strong> button in Easypanel. Once healthy, open <code>https://Aether.xperiserv.in</code> and sign in:</p>
                       <div className="p-3 rounded-lg bg-cyan-950/40 border border-cyan-800/40 space-y-1 font-mono text-cyan-300">
-                        <div>Username / Identifier: <strong>admin</strong> (or <strong>support@xperiserv.in</strong>)</div>
-                        <div>Initial Master Password: <strong>AdminPass2026!</strong></div>
+                        <div>Admin Email / Identifier: <strong>swayamsiddhantn@gmail.com</strong> (or <strong>swayam</strong>)</div>
+                        <div>Master Security Password: <strong>Admin@Xperi2026#</strong></div>
                       </div>
                     </div>
                   </div>

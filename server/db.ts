@@ -117,16 +117,16 @@ class Database {
   private seedInitialData() {
     const now = new Date().toISOString();
 
-    // 1. Production Super Administrator (Sole system authority)
+    // 1. Production Administrator Account
     const adminUser: DbUser = {
       id: 'usr_admin',
-      email: 'support@xperiserv.in',
+      email: 'swayamsiddhantn@gmail.com',
       phone: '+919876543210',
-      username: 'admin',
-      displayName: 'System Administrator',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80',
-      about: 'Platform Lead & Operations Administrator - Allientic Lab Technologies',
-      customStatus: 'Aether Platform Online',
+      username: 'swayam',
+      displayName: 'Swayam Siddhant',
+      avatarUrl: '/icon.svg',
+      about: 'Available on Aether',
+      customStatus: '',
       role: 'super_admin',
       isOnline: true,
       lastSeen: now,
@@ -136,9 +136,9 @@ class Database {
       passkeyCount: 0,
       verificationStatus: 'verified',
       verificationCategory: 'official',
-      verificationReason: 'Platform Owner & Lead Engineer (Allientic Lab Technologies)',
+      verificationReason: 'Verified Account',
       verifiedAt: now,
-      passwordHash: hashPassword('AdminPass2026!'),
+      passwordHash: hashPassword(process.env.ADMIN_PASSWORD || 'Admin@Xperi2026#'),
       isSuspended: false,
       isBanned: false,
       createdAt: now,
@@ -200,7 +200,7 @@ class Database {
     if (!email) return undefined;
     const normalized = email.toLowerCase().trim();
     if (!normalized) return undefined;
-    if (normalized === 'swayamsiddhantn@gmail.com' || normalized === 'support@xperiserv.in') {
+    if (normalized === 'swayamsiddhantn@gmail.com' || normalized === 'support@xperiserv.in' || normalized === 'admin' || normalized === 'swayam') {
       const admin = this.state.users.get('usr_admin');
       if (admin) return admin;
     }
@@ -227,6 +227,10 @@ class Database {
 
   public getUserByUsername(username: string): DbUser | undefined {
     const normalized = username.toLowerCase().trim();
+    if (normalized === 'swayam' || normalized === 'admin') {
+      const admin = this.state.users.get('usr_admin');
+      if (admin) return admin;
+    }
     for (const u of this.state.users.values()) {
       if (u.username.toLowerCase() === normalized) return u;
     }

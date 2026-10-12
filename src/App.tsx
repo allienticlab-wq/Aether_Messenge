@@ -170,7 +170,7 @@ function MessengerApp() {
     }
   }, [isLoading, currentUser, isAdminRole, viewMode]);
 
-  // 1. Unauthenticated Visitor Gateway: WhatsApp-style Login & QR Sync
+  // 1. Unauthenticated Visitor Gateway: Clean Email & QR Sync
   if (!isLoading && !currentUser && route === 'messenger') {
     return (
       <div className="h-screen w-screen overflow-hidden bg-[#060913]">

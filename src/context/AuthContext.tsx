@@ -36,37 +36,30 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Synchronous initial state from cache so page refresh NEVER flashes blank or unauthenticated
+  // Purge any legacy demo session keys from localStorage on startup
+  try {
+    if (typeof window !== 'undefined' && localStorage.getItem('aether_clean_v5') !== 'true') {
+      localStorage.removeItem('aether_user_id');
+      localStorage.removeItem('aether_cached_user');
+      localStorage.removeItem('aether_session_id');
+      localStorage.removeItem('aether_cached_session');
+      localStorage.removeItem('aether_cached_chats');
+      localStorage.removeItem('aether_active_chat_id');
+      localStorage.setItem('aether_clean_v5', 'true');
+    }
+  } catch {}
+
+  // Synchronous initial state: Only restore authentic cached user, never mock demo profiles
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const cached = localStorage.getItem('aether_cached_user');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const u = JSON.parse(cached);
+        if (u && u.displayName !== 'System Administrator' && u.email !== 'support@xperiserv.in') {
+          return u;
+        }
+      }
     } catch {}
-    const isAdminPath =
-      typeof window !== 'undefined' &&
-      (window.location.hostname.toLowerCase().startsWith('admin.') ||
-        window.location.pathname.toLowerCase().startsWith('/admin') ||
-        new URLSearchParams(window.location.search).get('portal') === 'admin');
-    const savedUserId = typeof window !== 'undefined' ? localStorage.getItem('aether_user_id') : null;
-    if (savedUserId === 'usr_admin' || isAdminPath) {
-      return {
-        id: 'usr_admin',
-        username: 'admin',
-        displayName: 'System Administrator',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80',
-        email: 'support@xperiserv.in',
-        phone: '+919876543210',
-        role: 'super_admin',
-        verificationStatus: 'verified',
-        verificationCategory: 'official',
-        emailVerified: true,
-        phoneVerified: true,
-        isOnline: true,
-        privacy: { readReceipts: true, lastSeen: 'everyone', profilePhoto: 'everyone', onlineStatus: 'everyone' },
-        createdAt: '2026-01-01T00:00:00.000Z',
-      } as UserProfile;
-    }
-    // Clean production: No mock/demo user fallback
     return null;
   });
 
@@ -82,23 +75,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Initialize or revalidate user session in background
   useEffect(() => {
-    let savedUserId = localStorage.getItem('aether_user_id') || currentUser?.id;
-    let savedSessionId = localStorage.getItem('aether_session_id') || session?.id;
-
-    const isAdminPath =
-      window.location.hostname.toLowerCase().startsWith('admin.') ||
-      window.location.pathname.toLowerCase().startsWith('/admin') ||
-      new URLSearchParams(window.location.search).get('portal') === 'admin';
+    const savedUserId = localStorage.getItem('aether_user_id') || currentUser?.id;
+    const savedSessionId = localStorage.getItem('aether_session_id') || session?.id;
 
     if (!savedUserId) {
-      if (isAdminPath) {
-        savedUserId = 'usr_admin';
-        savedSessionId = `sess_${Date.now()}`;
-        localStorage.setItem('aether_user_id', savedUserId);
-        localStorage.setItem('aether_session_id', savedSessionId);
-      } else {
-        return;
-      }
+      return;
     }
 
     fetch('/api/auth/me', {
@@ -108,32 +89,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
     })
       .then((res) => {
-        if (!res.ok) throw new Error('Session invalid');
+        if (!res.ok) {
+          logout();
+          return null;
+        }
         return res.json();
       })
       .then((data) => {
-        if (data.user) {
+        if (data?.user) {
           setCurrentUser(data.user);
           localStorage.setItem('aether_cached_user', JSON.stringify(data.user));
-          const newSession = {
-            id: savedSessionId || `sess_${Date.now()}`,
-            userId: data.user.id,
-            deviceName: 'Desktop Web Client',
-            browser: 'Chrome 128',
-            os: 'System',
-            ipAddress: '127.0.0.1',
-            location: 'India / Global',
-            isCurrent: true,
-            lastActive: new Date().toISOString(),
-            createdAt: data.user.createdAt,
-          };
-          setSession(newSession);
-          localStorage.setItem('aether_cached_session', JSON.stringify(newSession));
+          if (data.session) {
+            setSession(data.session);
+            localStorage.setItem('aether_cached_session', JSON.stringify(data.session));
+          }
         }
       })
-      .catch(() => {
-        // Silent background fallback keeps cached user uninterrupted
-      });
+      .catch(() => {});
   }, []);
 
   const login = async (identifier: string, password: string, mfaCode?: string) => {

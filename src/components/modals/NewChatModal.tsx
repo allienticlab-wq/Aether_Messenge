@@ -44,14 +44,11 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onR
 
   if (!isOpen) return null;
 
-  const cleanQ = searchQuery.replace(/\D/g, '');
   const filteredUsers = availableUsers.filter((u) => {
     const matchName = u.displayName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchUsername = u.username.toLowerCase().includes(searchQuery.toLowerCase());
     const matchEmail = u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const uPhoneDigits = (u.phone || '').replace(/\D/g, '');
-    const matchPhone = (u.phone && u.phone.includes(searchQuery)) || (cleanQ.length >= 3 && uPhoneDigits.includes(cleanQ));
-    return matchName || matchUsername || matchEmail || matchPhone;
+    return matchName || matchUsername || matchEmail;
   });
 
   const handleStartDirect = async (targetUserId: string) => {
@@ -245,7 +242,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onR
                         )}
                       </div>
                       <div className="text-[11px] text-slate-400 truncate">
-                        @{user.username} {user.phone ? `• ${user.phone}` : ''}
+                        @{user.username} {user.email ? `• ${user.email}` : ''}
                       </div>
                     </div>
                   </div>
