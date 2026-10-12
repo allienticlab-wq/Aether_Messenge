@@ -36,7 +36,7 @@ export interface StoredOtp {
   id: string;
   identifier: string; // email or phone
   code: string;
-  purpose: 'email_verify' | 'phone_verify' | 'login_challenge' | 'password_reset';
+  purpose: 'email_verify' | 'phone_verify' | 'login_challenge' | 'password_reset' | 'email_signup';
   attempts: number;
   maxAttempts: number;
   expiresAt: number;
@@ -81,6 +81,9 @@ export interface ServerState {
     html: string;
     template: string;
     sentAt: string;
+    status?: 'delivered' | 'failed' | 'simulated';
+    messageId?: string;
+    error?: string;
   }[];
   outboxSms: {
     id: string;

@@ -207,6 +207,76 @@ export function renderEmailTemplate(
       return { subject, html: wrapEmailLayout(content, branding, subject) };
     }
 
+    case 'signup_verification': {
+      const subject = `Verify your email for ${branding.appName}: ${data.otpCode || '391048'}`;
+      const content = `
+        <h2 style="color: #38bdf8; margin-top: 0; font-size: 20px;">Activate Your Account</h2>
+        <p>Hello ${name},</p>
+        <p>Thank you for creating an account on <strong>${branding.appName}</strong>. To complete your registration and secure your profile, enter the following 6-digit verification code:</p>
+        <div class="otp-code">${data.otpCode || '391048'}</div>
+        <div style="background: #1e293b; padding: 14px 18px; border-radius: 8px; margin: 18px 0; font-size: 13px; color: #94a3b8;">
+          <div>⏱️ <strong>Validity:</strong> This code is valid for <strong>${data.expiresInMinutes || 10} minutes</strong>.</div>
+          <div style="margin-top: 6px;">🔒 <strong>Security Warning:</strong> Never share this one-time passcode with anyone, including ${branding.appName} staff.</div>
+        </div>
+        <p style="font-size: 13px; color: #94a3b8;">If you did not initiate this registration, you can disregard this email.</p>
+      `;
+      return { subject, html: wrapEmailLayout(content, branding, subject) };
+    }
+
+    case 'login_otp': {
+      const subject = `Your ${branding.appName} Login Code: ${data.otpCode || '582910'}`;
+      const content = `
+        <h2 style="color: #38bdf8; margin-top: 0; font-size: 20px;">Sign-in Authentication Passcode</h2>
+        <p>Hello ${name},</p>
+        <p>A sign-in request was initiated for your <strong>${branding.appName}</strong> account. Enter this 6-digit one-time code to authenticate your session:</p>
+        <div class="otp-code">${data.otpCode || '582910'}</div>
+        <div style="background: #1e293b; padding: 14px 18px; border-radius: 8px; margin: 18px 0; font-size: 13px; color: #94a3b8;">
+          <div>⏱️ <strong>Expiration:</strong> Valid for <strong>${data.expiresInMinutes || 10} minutes</strong>.</div>
+          <div style="margin-top: 6px;">🌐 <strong>Client:</strong> ${data.client || 'Aether Web Messenger'}</div>
+          <div style="margin-top: 6px;">⚠️ <strong>Warning:</strong> If you did not attempt to sign in, someone may be trying to access your account. Secure your credentials immediately at ${branding.supportEmail}.</div>
+        </div>
+      `;
+      return { subject, html: wrapEmailLayout(content, branding, subject) };
+    }
+
+    case 'account_suspended': {
+      const subject = `URGENT: Your ${branding.appName} account has been suspended`;
+      const content = `
+        <h2 style="color: #ef4444; margin-top: 0; font-size: 20px;">Account Suspension Notice</h2>
+        <p>Hello ${name},</p>
+        <p>We are writing to inform you that your <strong>${branding.appName}</strong> account has been suspended by our Trust & Safety Compliance team.</p>
+        <div style="background: #1e293b; padding: 16px 20px; border-radius: 8px; border-left: 4px solid #ef4444; margin: 20px 0;">
+          <div style="color: #f87171; font-weight: 600; font-size: 14px; margin-bottom: 6px;">Reason for Suspension:</div>
+          <div style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">${data.reason || 'Violation of platform terms of service, acceptable use guidelines, or safety moderation policies.'}</div>
+          <div style="margin-top: 10px; font-size: 12px; color: #94a3b8;">
+            <span>Effective Date: </span><strong>${new Date().toUTCString()}</strong>
+          </div>
+        </div>
+        <p>While suspended, you cannot access direct messages, group chats, community channels, voice/video calls, or file transfers. All active sessions have been invalidated.</p>
+        <h3 style="color: #ffffff; font-size: 15px; margin-top: 24px;">Submitting an Appeal</h3>
+        <p>If you believe this suspension was made in error or wish to submit an appeal with additional context, please reply directly to our compliance desk or email <a href="mailto:${branding.supportEmail}" style="color: #38bdf8;">${branding.supportEmail}</a> with your account username (@${data.username || name}).</p>
+      `;
+      return { subject, html: wrapEmailLayout(content, branding, subject) };
+    }
+
+    case 'account_unsuspended': {
+      const subject = `Your ${branding.appName} account has been restored`;
+      const content = `
+        <h2 style="color: #38bdf8; margin-top: 0; font-size: 20px;">Account Access Restored</h2>
+        <p>Hello ${name},</p>
+        <p>We are pleased to notify you that the suspension on your <strong>${branding.appName}</strong> account has been lifted following review by our moderation operations team.</p>
+        <div style="background: #1e293b; padding: 16px 20px; border-radius: 8px; border-left: 4px solid #38bdf8; margin: 20px 0; font-size: 14px;">
+          <div>Status: <strong style="color: #38bdf8;">ACTIVE & CLEARED</strong></div>
+          <div style="margin-top: 4px; font-size: 12px; color: #94a3b8;">Reactivated on: ${new Date().toUTCString()}</div>
+        </div>
+        <p>You may now sign in and resume full real-time messaging, calling, and community interactions.</p>
+        <div style="text-align: center;">
+          <a href="${branding.appDomain}" class="btn">Sign In to ${branding.appName}</a>
+        </div>
+      `;
+      return { subject, html: wrapEmailLayout(content, branding, subject) };
+    }
+
     default: {
       const subject = `Notification from ${branding.appName}`;
       const content = `<p>Hello ${name},</p><p>${data.message || 'You have a new update in your account.'}</p>`;

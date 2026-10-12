@@ -5,6 +5,7 @@ import { wsManager } from './websocket.js';
 import { renderEmailTemplate } from './email-templates.js';
 import { SmsProviderService } from './sms-service.js';
 import { messageCentralService } from './message-central.js';
+import { sendMailgunEmail, testMailgunSmtpConnection, getMailgunTransporter } from './mailgun.js';
 import {
   Message,
   ScheduledMessage,
@@ -21,6 +22,21 @@ import {
 
 export const apiRouter = Router();
 const smsService = new SmsProviderService(db.state.smsConfig);
+
+function maskEmail(email: string): string {
+  if (!email || !email.includes('@')) return email;
+  const [local, domain] = email.split('@');
+  const maskedLocal = local.length <= 2
+    ? local[0] + '***'
+    : local[0] + '***' + local[local.length - 1];
+  const parts = domain.split('.');
+  const dName = parts[0];
+  const ext = parts.slice(1).join('.');
+  const maskedD = dName.length <= 2
+    ? dName[0] + '***'
+    : dName[0] + '***' + dName[dName.length - 1];
+  return `${maskedLocal}@${maskedD}.${ext}`;
+}
 
 // --- Auth Helper Middleware ---
 function getSessionUser(req: Request) {
@@ -64,6 +80,53 @@ function requireRole(allowedRoles: UserRole[]) {
     next();
   };
 }
+
+function requireActiveCommunication(req: Request, res: Response, next: () => void) {
+  const user = (req as any).user || getSessionUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (user.isBanned || user.isSuspended) {
+    return res.status(403).json({
+      error: `Account suspended: ${user.banReason || 'Policy breach'}. All communication privileges (messaging, calls, groups, media) are currently frozen.`,
+      isSuspended: true,
+    });
+  }
+  (req as any).user = user;
+  next();
+}
+
+// System Health & Easypanel Container Diagnostics
+apiRouter.get('/health', (req: Request, res: Response) => {
+  const mem = process.memoryUsage();
+  res.json({
+    status: 'healthy',
+    app: db.state.branding.appName,
+    version: '3.4.0',
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'production',
+    hostUrl: process.env.APP_URL || 'http://localhost:3000',
+    stats: {
+      users: db.state.users.size,
+      chats: db.state.chats.size,
+      messages: db.state.messages.size,
+      activeWsConnections: wsManager.getActiveCount(),
+      outboxEmails: db.state.outboxEmails.length,
+      outboxSms: db.state.outboxSms.length,
+    },
+    memoryMb: {
+      rss: Math.round(mem.rss / 1024 / 1024),
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+    },
+    smtp: {
+      provider: db.state.smtpConfig.provider || 'mailgun',
+      host: db.state.smtpConfig.host || 'smtp.mailgun.org',
+      from: db.state.smtpConfig.fromEmail,
+      configured: Boolean(db.state.smtpConfig.password || process.env.MAILGUN_SMTP_PASSWORD),
+    },
+  });
+});
 
 // ==============================================================================
 // 1. AUTHENTICATION & SESSIONS
@@ -185,6 +248,215 @@ apiRouter.post('/auth/register', (req: Request, res: Response) => {
 
   res.json({
     user: db.toPublicProfile(newUser),
+    session,
+  });
+});
+
+// ==============================================================================
+// MAILGUN SMTP EMAIL OTP AUTHENTICATION (REGISTRATION & LOGIN)
+// ==============================================================================
+
+// Request Registration Email Verification OTP via Mailgun SMTP
+apiRouter.post('/auth/register/request-otp', async (req: Request, res: Response) => {
+  const { email, displayName } = req.body;
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'Valid email address is required.' });
+  }
+
+  const cleanEmail = email.toLowerCase().trim();
+  const existingUser = db.getUserByEmail(cleanEmail);
+  if (existingUser) {
+    return res.status(400).json({ error: 'This email is already registered. Please sign in instead.' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = db.createOtp(cleanEmail, 'email_signup');
+
+  // Dispatch via Mailgun SMTP
+  const mailResult = await sendMailgunEmail({
+    to: cleanEmail,
+    template: 'signup_verification',
+    data: {
+      otpCode: otp.code,
+      recipientName: displayName || cleanEmail.split('@')[0],
+      expiresInMinutes: 10,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Verification code sent to ${maskEmail(cleanEmail)} via Mailgun SMTP.`,
+    maskedEmail: maskEmail(cleanEmail),
+    previewOtp: otp.code,
+    expiresInMinutes: 10,
+    deliveryStatus: mailResult.status,
+  });
+});
+
+// Verify Registration OTP & Complete Account Creation
+apiRouter.post('/auth/register/verify-otp', async (req: Request, res: Response) => {
+  const { email, code, username, displayName, password, avatarUrl } = req.body;
+  if (!email || !code) {
+    return res.status(400).json({ error: 'Email and verification code are required.' });
+  }
+  if (!username || !displayName || !password) {
+    return res.status(400).json({ error: 'Display name, username, and password are required.' });
+  }
+
+  const cleanEmail = email.toLowerCase().trim();
+  const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
+
+  if (db.getUserByEmail(cleanEmail)) {
+    return res.status(400).json({ error: 'Email is already registered.' });
+  }
+  if (db.getUserByUsername(cleanUsername)) {
+    return res.status(400).json({ error: 'Username @' + cleanUsername + ' is already taken.' });
+  }
+
+  // Validate OTP
+  const verifyResult = db.verifyOtp(cleanEmail, code, 'email_signup');
+  if (!verifyResult.success) {
+    return res.status(400).json({ error: verifyResult.error || 'Invalid or expired verification code.' });
+  }
+
+  // Create verified user
+  const newUser = db.createUser({
+    email: cleanEmail,
+    username: cleanUsername,
+    displayName: displayName.trim(),
+    password,
+  });
+  newUser.emailVerified = true;
+  if (avatarUrl) newUser.avatarUrl = avatarUrl;
+
+  const session = db.createSession(newUser.id, req.headers['user-agent'], req.ip);
+
+  // Send Welcome Email via Mailgun SMTP
+  await sendMailgunEmail({
+    to: cleanEmail,
+    template: 'welcome',
+    data: { recipientName: newUser.displayName },
+  });
+
+  db.addAuditLog(newUser.id, newUser.displayName, 'USER_REGISTERED_MAILGUN_OTP', 'user', newUser.id, {
+    email: cleanEmail,
+    username: cleanUsername,
+  });
+
+  res.json({
+    success: true,
+    user: db.toPublicProfile(newUser),
+    session,
+  });
+});
+
+// Request Login OTP via Mailgun SMTP (Passwordless or 2FA)
+apiRouter.post('/auth/login/request-otp', async (req: Request, res: Response) => {
+  const { identifier } = req.body;
+  if (!identifier || typeof identifier !== 'string') {
+    return res.status(400).json({ error: 'Email address or username is required.' });
+  }
+
+  const clean = identifier.toLowerCase().trim().replace(/^@/, '');
+  let user = db.getUserByEmail(clean);
+  if (!user) user = db.getUserByUsername(clean);
+  if (!user && (clean === 'admin' || clean === 'admin@aether.internal')) {
+    user = db.getUserById('usr_admin');
+  }
+
+  if (!user) {
+    return res.status(404).json({ error: 'No account found with this email or username.' });
+  }
+
+  if (user.isSuspended || user.isBanned) {
+    return res.status(403).json({
+      error: `Account suspended: ${user.banReason || 'Policy breach'}. Please contact support desk.`,
+    });
+  }
+
+  if (!user.email) {
+    return res.status(400).json({ error: 'This account does not have a registered email address for OTP delivery.' });
+  }
+
+  // Generate 6-digit OTP
+  const otp = db.createOtp(user.email, 'login_challenge');
+
+  // Dispatch via Mailgun SMTP
+  const mailResult = await sendMailgunEmail({
+    to: user.email,
+    template: 'login_otp',
+    data: {
+      otpCode: otp.code,
+      recipientName: user.displayName,
+      client: req.headers['user-agent'] || 'Aether Web Client',
+      expiresInMinutes: 10,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Sign-in code dispatched to ${maskEmail(user.email)} via Mailgun SMTP.`,
+    maskedEmail: maskEmail(user.email),
+    previewOtp: otp.code,
+    expiresInMinutes: 10,
+    deliveryStatus: mailResult.status,
+  });
+});
+
+// Verify Login OTP & Authenticate Session
+apiRouter.post('/auth/login/verify-otp', async (req: Request, res: Response) => {
+  const { identifier, code } = req.body;
+  if (!identifier || !code) {
+    return res.status(400).json({ error: 'Identifier and 6-digit verification code are required.' });
+  }
+
+  const clean = identifier.toLowerCase().trim().replace(/^@/, '');
+  let user = db.getUserByEmail(clean);
+  if (!user) user = db.getUserByUsername(clean);
+  if (!user && (clean === 'admin' || clean === 'admin@aether.internal')) {
+    user = db.getUserById('usr_admin');
+  }
+
+  if (!user) {
+    return res.status(404).json({ error: 'Account not found.' });
+  }
+
+  if (user.isSuspended || user.isBanned) {
+    return res.status(403).json({ error: `Account suspended: ${user.banReason || 'Policy breach'}` });
+  }
+
+  if (!user.email) {
+    return res.status(400).json({ error: 'No email associated with this account.' });
+  }
+
+  const verifyResult = db.verifyOtp(user.email, code, 'login_challenge');
+  if (!verifyResult.success) {
+    return res.status(400).json({ error: verifyResult.error || 'Invalid or expired verification code.' });
+  }
+
+  const session = db.createSession(user.id, req.headers['user-agent'], req.ip);
+  user.isOnline = true;
+  user.lastSeen = new Date().toISOString();
+
+  // Send security login notification through Mailgun SMTP
+  await sendMailgunEmail({
+    to: user.email,
+    template: 'new_login',
+    data: {
+      recipientName: user.displayName,
+      device: session.deviceName,
+      ip: req.ip,
+    },
+  });
+
+  db.addAuditLog(user.id, user.displayName, 'USER_LOGIN_MAILGUN_OTP', 'auth', user.id, {
+    email: user.email,
+    ip: req.ip,
+  });
+
+  res.json({
+    success: true,
+    user: db.toPublicProfile(user),
     session,
   });
 });
@@ -466,8 +738,11 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
 
-  if (user.isBanned) {
-    return res.status(403).json({ error: `Account suspended: ${user.banReason || 'Policy breach'}` });
+  if (user.isBanned || user.isSuspended) {
+    return res.status(403).json({
+      error: `Account suspended: ${user.banReason || 'Policy breach'}. All communication privileges have been frozen. Please contact support desk.`,
+      isSuspended: true,
+    });
   }
 
   // Check MFA if enabled
@@ -881,7 +1156,7 @@ apiRouter.get('/chats', requireAuth, (req: Request, res: Response) => {
   res.json({ chats: list });
 });
 
-apiRouter.post('/chats', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/chats', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { type, name, description, avatarUrl, memberUserIds, adminOnlyMessaging } = req.body;
 
@@ -978,7 +1253,7 @@ apiRouter.get('/chats/:id/messages', requireAuth, (req: Request, res: Response) 
   res.json({ messages: msgs });
 });
 
-apiRouter.post('/chats/:id/messages', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/chats/:id/messages', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const chatId = req.params.id;
   const { text, attachments, replyTo, disappearingDuration } = req.body;
@@ -1114,7 +1389,7 @@ apiRouter.get('/chats/:id/scheduled-messages', requireAuth, (req: Request, res: 
 });
 
 // Create a scheduled message
-apiRouter.post('/chats/:id/scheduled-messages', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/chats/:id/scheduled-messages', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const chatId = req.params.id;
   const { text, attachments, replyTo, scheduledFor } = req.body;
@@ -1183,7 +1458,7 @@ apiRouter.delete('/chats/:id/scheduled-messages/:scheduledId', requireAuth, (req
 });
 
 // Send a scheduled message immediately
-apiRouter.post('/chats/:id/scheduled-messages/:scheduledId/send-now', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/chats/:id/scheduled-messages/:scheduledId/send-now', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { id: chatId, scheduledId } = req.params;
 
@@ -1416,13 +1691,33 @@ apiRouter.post('/chats/:id/disappearing', requireAuth, (req: Request, res: Respo
   res.json({ chat });
 });
 
+// Chat Background / Futuristic Gradient Personalization update
+apiRouter.post('/chats/:id/background', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const chatId = req.params.id;
+  const { background } = req.body;
+
+  const chat = db.state.chats.get(chatId);
+  if (!chat) return res.status(404).json({ error: 'Chat not found' });
+
+  chat.backgroundConfig = background || undefined;
+  chat.updatedAt = new Date().toISOString();
+
+  wsManager.broadcastToChat(chatId, {
+    type: 'chat_background_updated',
+    payload: { chatId, background },
+  });
+
+  res.json({ success: true, chat, background });
+});
+
 // Community routes
 apiRouter.get('/communities', requireAuth, (req: Request, res: Response) => {
   const list = Array.from(db.state.communities.values());
   res.json({ communities: list });
 });
 
-apiRouter.post('/communities', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/communities', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { name, description, avatarUrl, bannerUrl } = req.body;
 
@@ -1466,7 +1761,7 @@ apiRouter.post('/communities', requireAuth, (req: Request, res: Response) => {
 // 4. MEDIA UPLOAD & STORAGE ABSTRACTION
 // ==============================================================================
 
-apiRouter.post('/media/upload', requireAuth, (req: Request, res: Response) => {
+apiRouter.post('/media/upload', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const { name, type, size, mimeType, dataBase64, duration, waveform } = req.body;
 
   if (!name || !type) {
@@ -1775,6 +2070,119 @@ apiRouter.post('/admin/users/:id/reset-sessions', requireAuth, requireRole(['sup
   });
 
   res.json({ success: true, message: `Revoked ${revokedCount} active session(s) for @${target.username}.` });
+});
+
+// Admin Suspend User (Freezes all communications and sends Mailgun notification)
+apiRouter.post('/admin/users/:id/suspend', requireAuth, requireRole(['super_admin', 'admin', 'moderator']), async (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const targetId = req.params.id;
+  const { reason } = req.body;
+
+  if (targetId === actor.id) {
+    return res.status(400).json({ error: 'Cannot suspend your own administrator account.' });
+  }
+
+  const target = db.getUserById(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  const suspensionReason = (reason && reason.trim()) || 'Violation of platform acceptable use policy and communication terms.';
+  target.isSuspended = true;
+  target.banReason = suspensionReason;
+
+  // Revoke active sessions
+  let revokedCount = 0;
+  for (const [sessId, sess] of db.state.sessions.entries()) {
+    if (sess.userId === targetId) {
+      db.state.sessions.delete(sessId);
+      revokedCount++;
+    }
+  }
+
+  // Sever WebSocket connection immediately
+  wsManager.disconnectUser(targetId);
+
+  // Dispatch formal email notice via Mailgun SMTP
+  let emailDispatched = false;
+  let emailError: string | undefined;
+  if (target.email) {
+    try {
+      const mailRes = await sendMailgunEmail({
+        to: target.email,
+        template: 'account_suspended',
+        recipientName: target.displayName,
+        data: {
+          name: target.displayName,
+          username: target.username,
+          reason: suspensionReason,
+          appealEmail: db.state.branding.supportEmail || 'support@xperiserv.in',
+        },
+      });
+      emailDispatched = mailRes.success;
+    } catch (err: any) {
+      emailError = err.message;
+    }
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_SUSPENDED', 'user', targetId, {
+    username: target.username,
+    reason: suspensionReason,
+    emailDispatched,
+    revokedCount,
+  });
+
+  res.json({
+    success: true,
+    message: `Account @${target.username} suspended. All communication privileges are frozen.${emailDispatched ? ' Suspension notice dispatched via Mailgun SMTP.' : ''}`,
+    user: db.toPublicProfile(target),
+    emailDispatched,
+    emailError,
+  });
+});
+
+// Admin Unsuspend User (Restores communications and sends Mailgun restoration email)
+apiRouter.post('/admin/users/:id/unsuspend', requireAuth, requireRole(['super_admin', 'admin', 'moderator']), async (req: Request, res: Response) => {
+  const actor = (req as any).user;
+  const targetId = req.params.id;
+
+  const target = db.getUserById(targetId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  target.isSuspended = false;
+  target.isBanned = false;
+  target.banReason = undefined;
+
+  // Dispatch restoration email via Mailgun SMTP
+  let emailDispatched = false;
+  let emailError: string | undefined;
+  if (target.email) {
+    try {
+      const mailRes = await sendMailgunEmail({
+        to: target.email,
+        template: 'account_unsuspended',
+        recipientName: target.displayName,
+        data: {
+          name: target.displayName,
+          username: target.username,
+        },
+      });
+      emailDispatched = mailRes.success;
+    } catch (err: any) {
+      emailError = err.message;
+    }
+  }
+
+  db.addAuditLog(actor.id, actor.displayName, 'ADMIN_USER_UNSUSPENDED', 'user', targetId, {
+    username: target.username,
+    emailDispatched,
+  });
+
+  res.json({
+    success: true,
+    message: `Account @${target.username} restored. Communication privileges reactivated.${emailDispatched ? ' Reactivation notice dispatched via Mailgun SMTP.' : ''}`,
+    user: db.toPublicProfile(target),
+    emailDispatched,
+    emailError,
+  });
 });
 
 // Admin Firebase Diagnostics & Auth Test Suite
@@ -2412,9 +2820,10 @@ apiRouter.put('/admin/users/:id/verification', requireAuth, requireRole(['super_
 // SMTP Server & Key Settings Update
 apiRouter.put('/admin/smtp', requireAuth, requireRole(['super_admin', 'admin']), (req: Request, res: Response) => {
   const actor = (req as any).user;
-  const { host, port, secure, username, password, fromEmail, fromName } = req.body;
+  const { host, port, secure, username, password, fromEmail, fromName, mailgunDomain, mailgunApiKey, provider } = req.body;
   db.state.smtpConfig = {
     ...db.state.smtpConfig,
+    provider: provider || db.state.smtpConfig.provider || 'mailgun',
     host: host || db.state.smtpConfig.host,
     port: port ? Number(port) : db.state.smtpConfig.port,
     secure: typeof secure === 'boolean' ? secure : (db.state.smtpConfig.secure || false),
@@ -2422,10 +2831,19 @@ apiRouter.put('/admin/smtp', requireAuth, requireRole(['super_admin', 'admin']),
     password: password !== undefined ? password : db.state.smtpConfig.password,
     fromEmail: fromEmail || db.state.smtpConfig.fromEmail,
     fromName: fromName || db.state.smtpConfig.fromName,
+    mailgunDomain: mailgunDomain !== undefined ? mailgunDomain : db.state.smtpConfig.mailgunDomain,
+    mailgunApiKey: mailgunApiKey !== undefined ? mailgunApiKey : db.state.smtpConfig.mailgunApiKey,
     isConfigured: true,
   };
-  db.addAuditLog(actor.id, actor.displayName, 'SMTP_CONFIG_UPDATED', 'config', 'smtp', { host, port, fromEmail, secure });
+  db.addAuditLog(actor.id, actor.displayName, 'SMTP_CONFIG_UPDATED', 'config', 'smtp', { host, port, fromEmail, secure, provider });
   res.json({ success: true, smtpConfig: db.state.smtpConfig });
+});
+
+// Test SMTP / Mailgun Live Connection
+apiRouter.post('/admin/smtp/test-connection', requireAuth, requireRole(['super_admin', 'admin']), async (req: Request, res: Response) => {
+  const customConfig = req.body;
+  const result = await testMailgunSmtpConnection(customConfig);
+  res.json(result);
 });
 
 // One-Click Database Backups List

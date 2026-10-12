@@ -7,6 +7,11 @@ interface AuthContextType {
   isLoading: boolean;
   login: (identifier: string, password: string, mfaCode?: string) => Promise<{ success: boolean; requireMfa?: boolean; error?: string }>;
   register: (data: { email?: string; username: string; displayName: string; password: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
+  // Mailgun SMTP Email OTP Authentication
+  requestEmailSignupOtp: (email: string, displayName?: string) => Promise<{ success: boolean; message?: string; maskedEmail?: string; previewOtp?: string; expiresInMinutes?: number; error?: string }>;
+  verifyEmailSignupOtp: (data: { email: string; code: string; username: string; displayName: string; password: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string }>;
+  requestEmailLoginOtp: (identifier: string) => Promise<{ success: boolean; message?: string; maskedEmail?: string; previewOtp?: string; expiresInMinutes?: number; error?: string }>;
+  verifyEmailLoginOtp: (identifier: string, code: string) => Promise<{ success: boolean; error?: string }>;
   // MessageCentral VerifyNow (India & Global)
   requestPhoneOtp: (phone: string, countryCode?: string, flowType?: 'SMS' | 'WHATSAPP') => Promise<{ success: boolean; error?: string; previewCode?: string; verificationId?: string }>;
   verifyPhoneOtp: (phone: string, code: string, verificationId?: string, countryCode?: string, profile?: { displayName?: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string; isNewUser?: boolean }>;
@@ -173,6 +178,107 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch {
       return { success: false, error: 'Registration failed due to network error.' };
+    }
+  };
+
+  // Mailgun SMTP Email OTP Registration
+  const requestEmailSignupOtp = async (email: string, displayName?: string) => {
+    try {
+      const res = await fetch('/api/auth/register/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, displayName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Failed to request email verification code.' };
+      }
+      return {
+        success: true,
+        message: data.message,
+        maskedEmail: data.maskedEmail,
+        previewOtp: data.previewOtp,
+        expiresInMinutes: data.expiresInMinutes,
+      };
+    } catch {
+      return { success: false, error: 'Network error connecting to email verification server.' };
+    }
+  };
+
+  const verifyEmailSignupOtp = async (formData: {
+    email: string;
+    code: string;
+    username: string;
+    displayName: string;
+    password: string;
+    avatarUrl?: string;
+  }) => {
+    try {
+      const res = await fetch('/api/auth/register/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Verification failed.' };
+      }
+      setCurrentUser(data.user);
+      setSession(data.session);
+      localStorage.setItem('aether_user_id', data.user.id);
+      localStorage.setItem('aether_session_id', data.session.id);
+      localStorage.setItem('aether_cached_user', JSON.stringify(data.user));
+      localStorage.setItem('aether_cached_session', JSON.stringify(data.session));
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Registration failed due to network error.' };
+    }
+  };
+
+  // Mailgun SMTP Email OTP Login
+  const requestEmailLoginOtp = async (identifier: string) => {
+    try {
+      const res = await fetch('/api/auth/login/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Failed to request login code.' };
+      }
+      return {
+        success: true,
+        message: data.message,
+        maskedEmail: data.maskedEmail,
+        previewOtp: data.previewOtp,
+        expiresInMinutes: data.expiresInMinutes,
+      };
+    } catch {
+      return { success: false, error: 'Network error sending login code.' };
+    }
+  };
+
+  const verifyEmailLoginOtp = async (identifier: string, code: string) => {
+    try {
+      const res = await fetch('/api/auth/login/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Sign-in code verification failed.' };
+      }
+      setCurrentUser(data.user);
+      setSession(data.session);
+      localStorage.setItem('aether_user_id', data.user.id);
+      localStorage.setItem('aether_session_id', data.session.id);
+      localStorage.setItem('aether_cached_user', JSON.stringify(data.user));
+      localStorage.setItem('aether_cached_session', JSON.stringify(data.session));
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Network error verifying sign-in code.' };
     }
   };
 
@@ -414,6 +520,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        requestEmailSignupOtp,
+        verifyEmailSignupOtp,
+        requestEmailLoginOtp,
+        verifyEmailLoginOtp,
         requestPhoneOtp,
         verifyPhoneOtp,
         generateQrSession,

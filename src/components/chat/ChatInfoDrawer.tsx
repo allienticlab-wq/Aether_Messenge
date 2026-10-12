@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useChat } from '../../context/ChatContext.js';
 import { useAuth } from '../../context/AuthContext.js';
-import { DisappearingDuration } from '../../types/index.js';
+import { DisappearingDuration, ChatBackgroundConfig } from '../../types/index.js';
 import {
   X,
   Clock,
@@ -17,9 +17,17 @@ import {
   VolumeX,
   CheckCircle2,
   Lock,
-  Pin
+  Pin,
+  Palette,
+  Sparkles,
+  Sliders,
+  RotateCcw,
+  Check,
+  Paintbrush,
+  Download
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
+import { GRADIENT_PRESETS, WALLPAPER_PRESETS, getPatternStyle } from '../../lib/chatThemes.js';
 
 interface ChatInfoDrawerProps {
   onClose: () => void;
@@ -27,7 +35,7 @@ interface ChatInfoDrawerProps {
 }
 
 export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenReportModal }) => {
-  const { activeChat, messages } = useChat();
+  const { activeChat, messages, activeChatBackground, setChatBackground } = useChat();
   const { currentUser } = useAuth();
 
   const [activeMediaTab, setActiveMediaTab] = useState<'media' | 'docs' | 'links'>('media');
@@ -35,6 +43,16 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
     activeChat?.disappearingDuration || 'off'
   );
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  // Background Personalization state
+  const [bgTab, setBgTab] = useState<'gradients' | 'wallpapers' | 'custom'>('gradients');
+  const [customImageUrl, setCustomImageUrl] = useState('');
+  const [customColor1, setCustomColor1] = useState('#06b6d4');
+  const [customColor2, setCustomColor2] = useState('#4f46e5');
+  const [customAngle, setCustomAngle] = useState(135);
+  const [customPattern, setCustomPattern] = useState<'none' | 'grid' | 'dots' | 'hexagons' | 'circuit' | 'scanlines'>('grid');
+  const [customOverlayDim, setCustomOverlayDim] = useState(0.35);
+  const [customBlur, setCustomBlur] = useState(0);
 
   if (!activeChat) return null;
 
@@ -75,6 +93,161 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
     } catch {
       setStatusMsg('Failed to update timer');
     }
+  };
+
+  const handleApplyPreset = async (presetConfig: ChatBackgroundConfig) => {
+    if (!activeChat) return;
+    try {
+      await setChatBackground(activeChat.id, presetConfig);
+      setStatusMsg(`Applied "${presetConfig.name || 'Gradient'}" to this chat`);
+      setTimeout(() => setStatusMsg(null), 3000);
+    } catch {
+      setStatusMsg('Failed to apply background');
+    }
+  };
+
+  const handleApplyWallpaper = async (wp: (typeof WALLPAPER_PRESETS)[0]) => {
+    if (!activeChat) return;
+    try {
+      await setChatBackground(activeChat.id, {
+        type: 'futuristic-image',
+        name: wp.name,
+        value: wp.url,
+        pattern: wp.pattern,
+        overlayDim: 0.4,
+      });
+      setStatusMsg(`Applied "${wp.name}" wallpaper`);
+      setTimeout(() => setStatusMsg(null), 3000);
+    } catch {
+      setStatusMsg('Failed to apply wallpaper');
+    }
+  };
+
+  const handleApplyCustomImage = async () => {
+    if (!activeChat || !customImageUrl.trim()) return;
+    try {
+      await setChatBackground(activeChat.id, {
+        type: 'futuristic-image',
+        name: 'Custom Image',
+        value: customImageUrl.trim(),
+        pattern: customPattern,
+        overlayDim: customOverlayDim,
+        blur: customBlur,
+      });
+      setStatusMsg('Applied custom image wallpaper');
+      setTimeout(() => setStatusMsg(null), 3000);
+    } catch {
+      setStatusMsg('Failed to apply custom image');
+    }
+  };
+
+  const handleApplyCustomGradient = async () => {
+    if (!activeChat) return;
+    try {
+      const gradientVal = `linear-gradient(${customAngle}deg, ${customColor1} 0%, ${customColor2} 100%)`;
+      await setChatBackground(activeChat.id, {
+        type: 'custom-gradient',
+        name: 'Custom Gradient',
+        value: gradientVal,
+        pattern: customPattern,
+        overlayDim: customOverlayDim,
+      });
+      setStatusMsg('Applied custom gradient');
+      setTimeout(() => setStatusMsg(null), 3000);
+    } catch {
+      setStatusMsg('Failed to apply custom gradient');
+    }
+  };
+
+  const handleResetBackground = async () => {
+    if (!activeChat) return;
+    try {
+      await setChatBackground(activeChat.id, null);
+      setStatusMsg('Reset to default background');
+      setTimeout(() => setStatusMsg(null), 3000);
+    } catch {
+      setStatusMsg('Failed to reset background');
+    }
+  };
+
+  const handleExportChat = (format: 'txt' | 'json') => {
+    if (!activeChat || messages.length === 0) {
+      setStatusMsg('No messages to export');
+      setTimeout(() => setStatusMsg(null), 2000);
+      return;
+    }
+
+    const chatTitle = activeChat.name || (isDirect ? partnerProfile?.displayName : 'conversation') || 'chat';
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const safeTitle = chatTitle.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `aether_${safeTitle}_${timestamp}.${format}`;
+
+    if (format === 'json') {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        platform: 'Aether Messenger',
+        chat: {
+          id: activeChat.id,
+          name: chatTitle,
+          type: activeChat.type,
+          membersCount: activeChat.members.length,
+        },
+        messageCount: messages.length,
+        messages: messages.map((m) => ({
+          id: m.id,
+          createdAt: m.createdAt,
+          senderId: m.senderId,
+          senderName: m.sender?.displayName || 'User',
+          senderUsername: m.sender?.username,
+          text: m.text,
+          attachments: m.attachments?.map((a) => ({ name: a.name, type: a.type, url: a.url })),
+          status: m.status,
+        })),
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      let txt = `=================================================\n`;
+      txt += `AETHER MESSENGER TRANSCRIPT EXPORT\n`;
+      txt += `Conversation: ${chatTitle}\n`;
+      txt += `Exported: ${new Date().toLocaleString()}\n`;
+      txt += `Total Messages: ${messages.length}\n`;
+      txt += `Security: End-to-End Encrypted Archive\n`;
+      txt += `=================================================\n\n`;
+
+      messages.forEach((m) => {
+        const time = new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const sender = m.sender?.displayName || (m.senderId === currentUser?.id ? 'You' : 'User');
+        const username = m.sender?.username ? ` (@${m.sender?.username})` : '';
+        txt += `[${time}] ${sender}${username}:\n`;
+        if (m.text) {
+          txt += `  ${m.text}\n`;
+        }
+        if (m.attachments?.length) {
+          m.attachments.forEach((a) => {
+            txt += `  [Attachment: ${a.name} (${a.type})] ${a.url}\n`;
+          });
+        }
+        txt += `\n`;
+      });
+
+      const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    setStatusMsg(`Downloaded transcript (${format.toUpperCase()})`);
+    setTimeout(() => setStatusMsg(null), 3000);
   };
 
   return (
@@ -238,6 +411,304 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
           </div>
         </div>
 
+        {/* Chat Background & Futuristic Gradients Personalization */}
+        <div className="space-y-3 p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800/80 shadow-inner">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+              <Palette className="w-4 h-4 text-cyan-400" />
+              <span>Chat Background</span>
+            </span>
+            {activeChatBackground && (
+              <button
+                onClick={handleResetBackground}
+                className="text-[10px] text-slate-400 hover:text-cyan-400 flex items-center gap-1 transition px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800"
+                title="Restore default background"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            Customize this conversation's visual atmosphere with futuristic gradients or sci-fi themes.
+          </p>
+
+          {/* Active theme badge */}
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px]">
+            <span className="text-slate-400">Current Theme:</span>
+            <span className="font-semibold text-cyan-300 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              {activeChatBackground?.name || (activeChatBackground ? 'Custom Theme' : 'Default Aether Glass')}
+            </span>
+          </div>
+
+          {/* Subtabs: Gradients, Wallpapers, Customizer */}
+          <div className="grid grid-cols-3 gap-1 bg-slate-900 p-0.5 rounded-xl border border-slate-800/90 text-[10px]">
+            <button
+              onClick={() => setBgTab('gradients')}
+              className={`py-1 text-center rounded-lg font-medium transition ${
+                bgTab === 'gradients'
+                  ? 'bg-cyan-500 text-slate-950 font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Gradients
+            </button>
+            <button
+              onClick={() => setBgTab('wallpapers')}
+              className={`py-1 text-center rounded-lg font-medium transition ${
+                bgTab === 'wallpapers'
+                  ? 'bg-cyan-500 text-slate-950 font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Wallpapers
+            </button>
+            <button
+              onClick={() => setBgTab('custom')}
+              className={`py-1 text-center rounded-lg font-medium transition ${
+                bgTab === 'custom'
+                  ? 'bg-cyan-500 text-slate-950 font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Custom
+            </button>
+          </div>
+
+          {/* TAB 1: Futuristic Gradients Presets */}
+          {bgTab === 'gradients' && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {GRADIENT_PRESETS.map((preset) => {
+                const isSelected = activeChatBackground?.name === preset.name || activeChatBackground?.value === preset.config.value;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleApplyPreset(preset.config)}
+                    className={`group relative p-2 rounded-xl text-left border transition overflow-hidden ${
+                      isSelected
+                        ? 'border-cyan-400 ring-1 ring-cyan-400/50 bg-slate-900'
+                        : 'border-slate-800/80 hover:border-slate-700 bg-slate-900/60'
+                    }`}
+                  >
+                    <div
+                      className={`h-10 w-full rounded-lg mb-1.5 relative overflow-hidden bg-gradient-to-br ${preset.previewClass} border border-white/10`}
+                      style={{ background: preset.config.value }}
+                    >
+                      <div
+                        className="absolute inset-0 pointer-events-none opacity-40"
+                        style={getPatternStyle(preset.config.pattern)}
+                      />
+                      {isSelected && (
+                        <div className="absolute top-1 right-1 bg-cyan-400 text-slate-950 rounded-full p-0.5 shadow">
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-medium text-slate-200 truncate group-hover:text-cyan-300">
+                        {preset.name}
+                      </span>
+                      {preset.config.pattern && preset.config.pattern !== 'none' && (
+                        <span className="text-[8px] text-slate-500 uppercase font-mono">
+                          {preset.config.pattern}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* TAB 2: Curated Futuristic Wallpapers */}
+          {bgTab === 'wallpapers' && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {WALLPAPER_PRESETS.map((wp) => {
+                const isSelected = activeChatBackground?.value === wp.url;
+                return (
+                  <button
+                    key={wp.id}
+                    onClick={() => handleApplyWallpaper(wp)}
+                    className={`group relative p-1.5 rounded-xl text-left border transition overflow-hidden ${
+                      isSelected
+                        ? 'border-cyan-400 ring-1 ring-cyan-400/50 bg-slate-900'
+                        : 'border-slate-800/80 hover:border-slate-700 bg-slate-900/60'
+                    }`}
+                  >
+                    <div className="h-14 w-full rounded-lg mb-1 relative overflow-hidden bg-slate-950 border border-white/10">
+                      <img
+                        src={wp.url}
+                        alt={wp.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-slate-950/30" />
+                      <div
+                        className="absolute inset-0 pointer-events-none opacity-30"
+                        style={getPatternStyle(wp.pattern)}
+                      />
+                      {isSelected && (
+                        <div className="absolute top-1 right-1 bg-cyan-400 text-slate-950 rounded-full p-0.5 shadow">
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium text-slate-200 truncate block group-hover:text-cyan-300">
+                      {wp.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* TAB 3: Custom Builder */}
+          {bgTab === 'custom' && (
+            <div className="space-y-3 pt-1 text-[11px]">
+              {/* Custom Dual Gradient */}
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider block">
+                  Dual Gradient Builder
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-slate-400 block mb-1">Color 1</label>
+                    <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                      <input
+                        type="color"
+                        value={customColor1}
+                        onChange={(e) => setCustomColor1(e.target.value)}
+                        className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent"
+                      />
+                      <span className="font-mono text-[9px] text-slate-300">{customColor1}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-slate-400 block mb-1">Color 2</label>
+                    <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                      <input
+                        type="color"
+                        value={customColor2}
+                        onChange={(e) => setCustomColor2(e.target.value)}
+                        className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent"
+                      />
+                      <span className="font-mono text-[9px] text-slate-300">{customColor2}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[9px] text-slate-400">Angle</span>
+                  <div className="flex gap-1">
+                    {[90, 135, 180, 225].map((angle) => (
+                      <button
+                        key={angle}
+                        onClick={() => setCustomAngle(angle)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${
+                          customAngle === angle
+                            ? 'bg-cyan-500 text-slate-950 font-bold'
+                            : 'bg-slate-950 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {angle}°
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleApplyCustomGradient}
+                  className="w-full py-1.5 px-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-medium text-[10px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Paintbrush className="w-3 h-3" />
+                  <span>Apply Gradient</span>
+                </button>
+              </div>
+
+              {/* Custom Image URL */}
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider block">
+                  Custom Image URL
+                </span>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/..."
+                  value={customImageUrl}
+                  onChange={(e) => setCustomImageUrl(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[10px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  onClick={handleApplyCustomImage}
+                  disabled={!customImageUrl.trim()}
+                  className="w-full py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-[10px] font-medium transition cursor-pointer"
+                >
+                  Apply Image Wallpaper
+                </button>
+              </div>
+
+              {/* Sci-Fi Pattern Overlay Selector */}
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+                <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider block">
+                  Pattern Overlay
+                </span>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['none', 'grid', 'dots', 'circuit', 'hexagons', 'scanlines'] as const).map((pat) => (
+                    <button
+                      key={pat}
+                      onClick={async () => {
+                        setCustomPattern(pat);
+                        if (activeChatBackground && activeChat) {
+                          await setChatBackground(activeChat.id, {
+                            ...activeChatBackground,
+                            pattern: pat,
+                          });
+                        }
+                      }}
+                      className={`py-1 px-1.5 rounded text-[9px] uppercase font-mono truncate transition ${
+                        (activeChatBackground?.pattern || customPattern) === pat
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      {pat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Overlay Dimmer Slider */}
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400">Background Dimmer</span>
+                  <span className="font-mono text-cyan-400">
+                    {Math.round((activeChatBackground?.overlayDim ?? customOverlayDim) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.85"
+                  step="0.05"
+                  value={activeChatBackground?.overlayDim ?? customOverlayDim}
+                  onChange={async (e) => {
+                    const val = parseFloat(e.target.value);
+                    setCustomOverlayDim(val);
+                    if (activeChatBackground && activeChat) {
+                      await setChatBackground(activeChat.id, {
+                        ...activeChatBackground,
+                        overlayDim: val,
+                      });
+                    }
+                  }}
+                  className="w-full accent-cyan-400 h-1 bg-slate-950 rounded cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Group Members (if group or community) */}
         {!isDirect && (
           <div className="space-y-3">
@@ -330,6 +801,36 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
               )}
             </div>
           )}
+        </div>
+
+        {/* Export Chat History & Offline Archive */}
+        <div className="space-y-2 p-3 rounded-2xl bg-slate-950/70 border border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-100 flex items-center gap-1.5">
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Export Conversation</span>
+            </span>
+            <span className="text-[10px] text-slate-500">{messages.length} msgs</span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Download a secure timestamped transcript of this conversation for offline backup.
+          </p>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => handleExportChat('txt')}
+              className="py-1.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Text (.txt)</span>
+            </button>
+            <button
+              onClick={() => handleExportChat('json')}
+              className="py-1.5 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-400" />
+              <span>JSON (.json)</span>
+            </button>
+          </div>
         </div>
 
         {/* Actions & Moderation */}

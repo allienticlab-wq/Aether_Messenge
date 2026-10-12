@@ -17,6 +17,7 @@ import { SettingsModal } from './components/modals/SettingsModal.js';
 import { AdminDashboard } from './components/admin/AdminDashboard.js';
 import { AdminLoginGate } from './components/admin/AdminLoginGate.js';
 import { WebQrLoginView } from './components/web/WebQrLoginView.js';
+import { UnifiedAuthView } from './components/auth/UnifiedAuthView.js';
 import { QrScannerModal } from './components/modals/QrScannerModal.js';
 import { ReportModal } from './components/modals/ReportModal.js';
 import { LegalModal } from './components/modals/LegalModal.js';
@@ -40,10 +41,13 @@ import {
   Server,
   Activity,
   Layers,
-  Radio
+  Radio,
+  Pin,
+  AlertTriangle
 } from 'lucide-react';
 import { VerifiedBadge } from './components/common/VerifiedBadge.js';
 import { PWAInstallButton } from './components/common/PWAInstallButton.js';
+import { getPatternStyle } from './lib/chatThemes.js';
 
 function MessengerApp() {
   const { branding, theme, setTheme } = useBranding();
@@ -58,6 +62,8 @@ function MessengerApp() {
     chats,
     isWsConnected,
     typingUsers,
+    activeChatBackground,
+    togglePin,
   } = useChat();
 
   // Dedicated route detection:
@@ -146,6 +152,8 @@ function MessengerApp() {
 
   const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
+  const pinnedMessage = messages.find((m) => m.isPinned);
+
   const filteredInChatMessages = inChatQuery.trim()
     ? messages.filter((m) => m.text?.toLowerCase().includes(inChatQuery.toLowerCase()))
     : messages;
@@ -162,21 +170,20 @@ function MessengerApp() {
     }
   }, [isLoading, currentUser, isAdminRole, viewMode]);
 
-  // Prompt login only if user is definitely missing and finished loading
-  useEffect(() => {
-    if (!isLoading && !currentUser && route === 'messenger') {
-      setAuthModalOpen(true);
-    }
-  }, [isLoading, currentUser, route]);
+  // 1. Unauthenticated Visitor Gateway: WhatsApp-style Login & QR Sync
+  if (!isLoading && !currentUser && route === 'messenger') {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-[#060913]">
+        <UnifiedAuthView mode="fullscreen" defaultTab="otp" />
+      </div>
+    );
+  }
 
-  // 1. Dedicated Web QR Pairing Portal (/web, ?portal=web, web.aether.*)
+  // 2. Dedicated Web QR Pairing Portal (/web, ?portal=web, web.aether.*)
   if (route === 'web') {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-[#060910]">
-        <WebQrLoginView
-          onOpenMobileLogin={() => setAuthModalOpen(true)}
-        />
-        <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+      <div className="h-screen w-screen overflow-hidden bg-[#060913]">
+        <UnifiedAuthView mode="fullscreen" defaultTab="qr" />
       </div>
     );
   }
@@ -374,19 +381,50 @@ function MessengerApp() {
 
             {/* Center Chat View */}
             <div
-              className={`flex-1 flex flex-col h-full min-w-0 bg-radial from-slate-900/30 to-slate-950/80 ${
-                !activeChat ? 'hidden md:flex' : 'flex'
+              className={`flex-1 flex flex-col h-full min-w-0 relative overflow-hidden ${
+                !activeChat ? 'hidden md:flex bg-radial from-slate-900/30 to-slate-950/80' : 'flex'
               }`}
             >
+              {/* Dynamic Personalized Background Layer for Active Chat Session */}
+              {activeChat && (
+                <div
+                  className="absolute inset-0 pointer-events-none transition-all duration-500 ease-out z-0"
+                  style={{
+                    background: activeChatBackground?.value || 'radial-gradient(circle at 50% 30%, rgba(15, 23, 42, 0.6) 0%, rgba(2, 6, 23, 0.95) 80%)',
+                    backgroundSize: activeChatBackground?.type === 'futuristic-image' ? 'cover' : undefined,
+                    backgroundPosition: activeChatBackground?.type === 'futuristic-image' ? 'center' : undefined,
+                    backgroundRepeat: 'no-repeat',
+                    filter: activeChatBackground?.blur ? `blur(${activeChatBackground.blur}px)` : undefined,
+                  }}
+                >
+                  {/* Pattern Overlay Layer */}
+                  {activeChatBackground?.pattern && activeChatBackground.pattern !== 'none' && (
+                    <div
+                      className="absolute inset-0 opacity-40 transition-opacity duration-300 pointer-events-none"
+                      style={getPatternStyle(activeChatBackground.pattern)}
+                    />
+                  )}
+                  {/* Readability Dimmer / Darkening Layer */}
+                  <div
+                    className="absolute inset-0 transition-opacity duration-300 pointer-events-none"
+                    style={{
+                      backgroundColor: `rgba(2, 6, 23, ${activeChatBackground?.overlayDim ?? 0.3})`,
+                    }}
+                  />
+                </div>
+              )}
+
               {activeChat ? (
                 <>
-                  <ChatHeader
-                    onBackMobile={() => setActiveChat(null)}
-                    onToggleSearch={() => setChatSearchOpen(!chatSearchOpen)}
-                  />
+                  <div className="relative z-10">
+                    <ChatHeader
+                      onBackMobile={() => setActiveChat(null)}
+                      onToggleSearch={() => setChatSearchOpen(!chatSearchOpen)}
+                    />
+                  </div>
 
                   {chatSearchOpen && (
-                    <div className="p-2 border-b border-slate-800/60 bg-slate-900/90 flex items-center gap-2 px-4">
+                    <div className="relative z-10 p-2 border-b border-slate-800/60 bg-slate-900/90 flex items-center gap-2 px-4">
                       <Search className="w-4 h-4 text-slate-400" />
                       <input
                         type="text"
@@ -407,8 +445,47 @@ function MessengerApp() {
                     </div>
                   )}
 
+                  {/* Account Suspended Communication Frozen Banner */}
+                  {currentUser?.isSuspended && (
+                    <div className="relative z-10 px-4 py-2.5 bg-amber-950/80 border-b border-amber-700/60 text-amber-200 text-xs flex items-center justify-between shadow-inner backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>
+                          <strong>Communication Frozen:</strong> Outgoing messaging, calling, and file sharing are suspended by Trust & Safety. Contact <span className="underline font-mono">{branding.supportEmail}</span> to appeal.
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* In-Chat Pinned Message Banner */}
+                  {pinnedMessage && (
+                    <div className="relative z-10 px-4 py-2 bg-slate-900/90 border-b border-cyan-800/40 backdrop-blur-md flex items-center justify-between text-xs text-slate-200 shadow-sm animate-fadeIn">
+                      <div
+                        onClick={() => {
+                          const el = document.getElementById(`msg-${pinnedMessage.id}`);
+                          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className="flex items-center gap-2 cursor-pointer truncate mr-2 hover:text-cyan-300 transition"
+                        title="Click to jump to pinned message"
+                      >
+                        <Pin className="w-3.5 h-3.5 text-cyan-400 shrink-0 rotate-45" />
+                        <span className="font-semibold text-cyan-300 shrink-0">Pinned:</span>
+                        <span className="truncate text-slate-300 text-[11px]">
+                          {pinnedMessage.text || (pinnedMessage.attachments?.length ? `Attachment (${pinnedMessage.attachments[0].name})` : 'Voice note')}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => togglePin(pinnedMessage.id)}
+                        className="text-slate-400 hover:text-slate-200 text-[10px] px-2 py-0.5 rounded-md bg-slate-800/80 hover:bg-slate-700 shrink-0 border border-slate-700/60 transition"
+                        title="Unpin message"
+                      >
+                        Unpin
+                      </button>
+                    </div>
+                  )}
+
                   {/* Messages Stream */}
-                  <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-2">
+                  <div className="relative z-10 flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-2">
                     <div className="flex justify-center my-2">
                       <button
                         onClick={() => setE2eeModalOpen(true)}
@@ -469,10 +546,12 @@ function MessengerApp() {
                   </div>
 
                   {/* Composer */}
-                  <MessageComposer
-                    replyMessage={replyMessage}
-                    onClearReply={() => setReplyMessage(null)}
-                  />
+                  <div className="relative z-10">
+                    <MessageComposer
+                      replyMessage={replyMessage}
+                      onClearReply={() => setReplyMessage(null)}
+                    />
+                  </div>
                 </>
               ) : (
                 /* Empty state when no conversation is selected */
@@ -537,13 +616,30 @@ function MessengerApp() {
               )}
             </div>
 
-            {/* Right Chat Info Drawer (Desktop only, if open) */}
+            {/* Right Chat Info Drawer (Desktop side-panel) */}
             {activeChat && infoDrawerOpen && viewMode !== 'split' && (
               <div className="hidden lg:block h-full">
                 <ChatInfoDrawer
                   onClose={() => setInfoDrawerOpen(false)}
                   onOpenReportModal={() => setReportModalOpen(true)}
                 />
+              </div>
+            )}
+
+            {/* Right Chat Info Drawer (Mobile & Tablet overlay slide-over) */}
+            {activeChat && infoDrawerOpen && viewMode !== 'split' && (
+              <div
+                className="lg:hidden fixed inset-0 z-50 flex justify-end bg-slate-950/80 backdrop-blur-sm animate-fadeIn"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setInfoDrawerOpen(false);
+                }}
+              >
+                <div className="w-full max-w-sm h-full bg-slate-900 shadow-2xl overflow-y-auto">
+                  <ChatInfoDrawer
+                    onClose={() => setInfoDrawerOpen(false)}
+                    onOpenReportModal={() => setReportModalOpen(true)}
+                  />
+                </div>
               </div>
             )}
           </div>

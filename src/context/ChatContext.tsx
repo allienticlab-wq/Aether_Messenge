@@ -4,6 +4,7 @@ import {
   Chat,
   Message,
   ScheduledMessage,
+  ChatBackgroundConfig,
   Attachment,
   MessageReplySnippet,
   Community,
@@ -17,6 +18,9 @@ interface ChatContextType {
   setActiveChat: (chat: Chat | null) => void;
   messages: Message[];
   scheduledMessages: ScheduledMessage[];
+  chatBackgrounds: Record<string, ChatBackgroundConfig>;
+  activeChatBackground: ChatBackgroundConfig | null;
+  setChatBackground: (chatId: string, config: ChatBackgroundConfig | null) => Promise<void>;
   isLoadingMessages: boolean;
   isWsConnected: boolean;
   sendMessage: (text: string, attachments?: Attachment[], replyTo?: MessageReplySnippet) => Promise<void>;
@@ -96,6 +100,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+
+  const [chatBackgrounds, setChatBackgrounds] = useState<Record<string, ChatBackgroundConfig>>(() => {
+    try {
+      const cached = localStorage.getItem('aether_chat_backgrounds');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return {};
+  });
 
   const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
@@ -370,6 +382,29 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
               case 'scheduled_message_sent': {
                 const { scheduledId } = payload;
                 setScheduledMessages((prev) => prev.filter((s) => s.id !== scheduledId));
+                break;
+              }
+
+              case 'chat_background_updated': {
+                const { chatId, background } = payload;
+                setChatBackgrounds((prev) => {
+                  const updated = { ...prev };
+                  if (background) {
+                    updated[chatId] = background;
+                  } else {
+                    delete updated[chatId];
+                  }
+                  try {
+                    localStorage.setItem('aether_chat_backgrounds', JSON.stringify(updated));
+                  } catch {}
+                  return updated;
+                });
+                setChats((prev) =>
+                  prev.map((c) => (c.id === chatId ? { ...c, backgroundConfig: background } : c))
+                );
+                setActiveChatState((prev) =>
+                  prev && prev.id === chatId ? { ...prev, backgroundConfig: background } : prev
+                );
                 break;
               }
 
@@ -1103,6 +1138,50 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const activeChatBackground = activeChat
+    ? chatBackgrounds[activeChat.id] || activeChat.backgroundConfig || null
+    : null;
+
+  const setChatBackground = async (chatId: string, config: ChatBackgroundConfig | null) => {
+    setChatBackgrounds((prev) => {
+      const updated = { ...prev };
+      if (config) {
+        updated[chatId] = config;
+      } else {
+        delete updated[chatId];
+      }
+      try {
+        localStorage.setItem('aether_chat_backgrounds', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    setChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, backgroundConfig: config || undefined } : c))
+    );
+
+    if (activeChat?.id === chatId) {
+      setActiveChatState((prev) =>
+        prev ? { ...prev, backgroundConfig: config || undefined } : null
+      );
+    }
+
+    if (currentUser) {
+      try {
+        await fetch(`/api/chats/${chatId}/background`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser.id,
+          },
+          body: JSON.stringify({ background: config }),
+        });
+      } catch (err) {
+        console.error('Failed to sync chat background to server:', err);
+      }
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -1111,6 +1190,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setActiveChat,
         messages,
         scheduledMessages,
+        chatBackgrounds,
+        activeChatBackground,
+        setChatBackground,
         isLoadingMessages,
         isWsConnected,
         sendMessage,

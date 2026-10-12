@@ -36,6 +36,9 @@ export interface UserProfile {
   verifiedAt?: string;
   verificationExpiry?: string;
   verificationReason?: string;
+  isSuspended?: boolean;
+  isBanned?: boolean;
+  banReason?: string;
   createdAt: string;
   privacy: {
     lastSeen: 'everyone' | 'contacts' | 'nobody';
@@ -145,6 +148,18 @@ export interface ScheduledMessage {
   createdAt: string;
 }
 
+export type ChatBackgroundType = 'preset-gradient' | 'custom-gradient' | 'futuristic-image' | 'solid';
+
+export interface ChatBackgroundConfig {
+  id?: string;
+  type: ChatBackgroundType;
+  name?: string;
+  value: string;
+  pattern?: 'none' | 'grid' | 'dots' | 'hexagons' | 'circuit' | 'scanlines';
+  overlayDim?: number; // 0 to 0.95
+  blur?: number; // 0 to 10
+}
+
 export interface Chat {
   id: string;
   type: ChatType;
@@ -160,6 +175,7 @@ export interface Chat {
   disappearingDuration: DisappearingDuration;
   adminOnlyMessaging?: boolean;
   communityId?: string;
+  backgroundConfig?: ChatBackgroundConfig;
   createdAt: string;
   updatedAt: string;
 }
@@ -267,6 +283,7 @@ export interface WhiteLabelBranding {
 }
 
 export interface SmtpConfig {
+  provider?: 'mailgun' | 'smtp' | 'custom';
   host: string;
   port: number;
   secure?: boolean;
@@ -274,7 +291,11 @@ export interface SmtpConfig {
   password?: string;
   fromEmail: string;
   fromName: string;
+  mailgunDomain?: string;
+  mailgunApiKey?: string;
   isConfigured: boolean;
+  lastTestedAt?: string;
+  lastTestStatus?: 'success' | 'failed';
 }
 
 export interface SmsConfig {

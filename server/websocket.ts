@@ -36,8 +36,14 @@ export class WebSocketManager {
       const userId = url.searchParams.get('userId');
       const sessionId = url.searchParams.get('sessionId') || 'default_session';
 
-      if (!userId || !db.getUserById(userId)) {
+      const user = userId ? db.getUserById(userId) : undefined;
+      if (!userId || !user) {
         ws.close(4001, 'Unauthorized');
+        return;
+      }
+
+      if (user.isSuspended || user.isBanned) {
+        ws.close(4003, 'Account suspended: All communication privileges are frozen.');
         return;
       }
 
@@ -54,12 +60,9 @@ export class WebSocketManager {
       this.clients.get(userId)!.add(client);
 
       // Mark user online in database
-      const user = db.getUserById(userId);
-      if (user) {
-        user.isOnline = true;
-        user.lastSeen = new Date().toISOString();
-        this.broadcastPresence(userId, true);
-      }
+      user.isOnline = true;
+      user.lastSeen = new Date().toISOString();
+      this.broadcastPresence(userId, true);
 
       // Heartbeat ping-pong
       ws.on('pong', () => {
@@ -121,6 +124,17 @@ export class WebSocketManager {
   }
 
   private handleClientMessage(client: AuthenticatedClient, msg: any) {
+    const user = db.getUserById(client.userId);
+    if (!user || user.isSuspended || user.isBanned) {
+      try {
+        client.ws.send(JSON.stringify({
+          type: 'error',
+          payload: { message: 'Account suspended: All communication privileges are frozen.' },
+        }));
+      } catch {}
+      return;
+    }
+
     const { type, payload } = msg;
 
     switch (type) {
@@ -242,6 +256,17 @@ export class WebSocketManager {
         }
       }
     }
+  }
+
+  public disconnectUser(userId: string) {
+    const userClients = this.clients.get(userId);
+    if (!userClients) return;
+    for (const client of userClients) {
+      try {
+        client.ws.close(4003, 'Account suspended');
+      } catch {}
+    }
+    this.clients.delete(userId);
   }
 }
 

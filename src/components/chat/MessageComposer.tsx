@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../../context/ChatContext.js';
+import { useAuth } from '../../context/AuthContext.js';
 import { Message, MessageReplySnippet, Attachment } from '../../types/index.js';
 import {
   Smile,
@@ -32,6 +33,7 @@ interface MessageComposerProps {
 }
 
 export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, onClearReply }) => {
+  const { currentUser } = useAuth();
   const {
     sendMessage,
     scheduleMessage,
@@ -550,6 +552,20 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
     const s = sec % 60;
     return `${mins}:${s.toString().padStart(2, '0')}`;
   };
+
+  if (currentUser?.isSuspended) {
+    return (
+      <div className="border-t border-amber-800/60 bg-amber-950/40 backdrop-blur-md px-4 py-3 flex items-center justify-between gap-3 text-xs text-amber-200">
+        <div className="flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          <div>
+            <span className="font-semibold text-amber-100">Communication Frozen: </span>
+            <span>Your account privileges are suspended by Trust & Safety. Sending messages, voice memos, and media attachments is disabled.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-3 md:px-5 py-3">

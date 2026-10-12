@@ -17,7 +17,8 @@ import {
   Laptop,
   Globe,
   Award,
-  Camera
+  Camera,
+  ExternalLink
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PhotoUploaderModal } from '../common/PhotoUploaderModal.js';
@@ -860,6 +861,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* 6. DATA & LEGAL */}
           {activeTab === 'account' && (
             <div className="space-y-5">
+              {/* Admin Portal Gateway */}
+              <div className="p-4 rounded-xl bg-slate-950/50 border border-cyan-800/60 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                    <Shield className="w-4 h-4 text-cyan-400" />
+                    <span>Admin Operations Portal</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">Direct portal for user moderation, Mailgun SMTP setup, and system diagnostics.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    window.history.pushState({}, '', '/admin');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-200 font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Admin (/admin)</span>
+                </button>
+              </div>
+
               <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-slate-200">Export All Account Data</div>
