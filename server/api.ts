@@ -1273,6 +1273,80 @@ apiRouter.post('/calls/log', requireAuth, (req: Request, res: Response) => {
   res.json({ success: true, log: logEntry });
 });
 
+// Real-Time WebRTC Call Signaling & Fail-Safe Polling Engine
+const activeCallStore = new Map<string, any>(); // callId -> CallSession
+
+apiRouter.get('/calls/active', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const activeOffers: any[] = [];
+  const now = Date.now();
+
+  for (const [callId, call] of activeCallStore.entries()) {
+    // Purge calls older than 45 seconds (call timeout)
+    if (now - new Date(call.createdAt || call.startedAt || now).getTime() > 45000) {
+      activeCallStore.delete(callId);
+      continue;
+    }
+    // Check if user is target recipient or member of the chat
+    if (call.targetUserId === user.id) {
+      if (call.fromUserId !== user.id) {
+        activeOffers.push(call);
+      }
+    } else if (call.chatId) {
+      const chat = db.state.chats.get(call.chatId);
+      if (chat && chat.members.some((m) => m.userId === user.id) && call.fromUserId !== user.id) {
+        activeOffers.push(call);
+      }
+    }
+  }
+
+  res.json({ activeCalls: activeOffers });
+});
+
+apiRouter.post('/calls/signal', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { type, payload } = req.body;
+  if (!type || !payload) return res.status(400).json({ error: 'Invalid signal payload' });
+
+  const signalPayload = {
+    ...payload,
+    fromUserId: user.id,
+    fromUserName: user.displayName,
+    fromUserAvatar: user.avatarUrl,
+  };
+
+  if (type === 'webrtc_call_offer') {
+    const callId = payload.callId || `call_${Date.now()}`;
+    activeCallStore.set(callId, {
+      ...signalPayload,
+      callId,
+      createdAt: new Date().toISOString(),
+    });
+    if (payload.targetUserId) {
+      wsManager.sendToUser(payload.targetUserId, { type: 'webrtc_call_offer', payload: signalPayload });
+    } else if (payload.chatId) {
+      wsManager.broadcastToChat(payload.chatId, { type: 'webrtc_call_offer', payload: signalPayload }, user.id);
+    }
+  } else if (type === 'webrtc_call_end' || type === 'webrtc_call_answer' || type === 'webrtc_call_decline') {
+    if (payload.callId) {
+      activeCallStore.delete(payload.callId);
+    }
+    if (payload.targetUserId) {
+      wsManager.sendToUser(payload.targetUserId, { type, payload: signalPayload });
+    } else if (payload.chatId) {
+      wsManager.broadcastToChat(payload.chatId, { type, payload: signalPayload }, user.id);
+    }
+  } else {
+    if (payload.targetUserId) {
+      wsManager.sendToUser(payload.targetUserId, { type, payload: signalPayload });
+    } else if (payload.chatId) {
+      wsManager.broadcastToChat(payload.chatId, { type, payload: signalPayload }, user.id);
+    }
+  }
+
+  res.json({ success: true });
+});
+
 apiRouter.post('/chats', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { type, name, description, avatarUrl, memberUserIds, adminOnlyMessaging } = req.body;

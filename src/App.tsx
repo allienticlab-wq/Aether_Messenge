@@ -180,7 +180,7 @@ function MessengerApp() {
   }
 
   // 2. Dedicated Web QR Pairing Portal (/web, ?portal=web, web.aether.*)
-  if (route === 'web') {
+  if (route === 'web' && !currentUser) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-[#060913]">
         <UnifiedAuthView mode="fullscreen" defaultTab="qr" />

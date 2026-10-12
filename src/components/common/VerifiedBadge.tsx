@@ -24,6 +24,7 @@ export interface VerifiedBadgeProps {
   username?: string;
   displayName?: string;
   showPopover?: boolean;
+  popoverPosition?: 'top' | 'bottom' | 'auto';
   asSpan?: boolean;
   verifiedAt?: string;
   className?: string;
@@ -55,6 +56,7 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
   username,
   displayName,
   showPopover = true,
+  popoverPosition = 'bottom',
   asSpan = false,
   verifiedAt,
   className = '',
@@ -285,11 +287,19 @@ export const VerifiedBadge: React.FC<VerifiedBadgeProps> = ({
         <div
           ref={popoverRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 sm:w-84 bg-slate-900/95 border border-slate-700/80 rounded-2xl shadow-2xl p-4 text-slate-100 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+          className={`absolute z-50 ${
+            popoverPosition === 'top'
+              ? 'bottom-full mb-2'
+              : 'top-full mt-2'
+          } left-1/2 -translate-x-1/2 w-80 sm:w-84 bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl p-4 text-slate-100 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150`}
           style={{ minWidth: '310px' }}
         >
           {/* Popover Arrow Indicator */}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px w-3 h-3 bg-slate-900 border-r border-b border-slate-700/80 rotate-45" />
+          {popoverPosition === 'top' ? (
+            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px w-3 h-3 bg-slate-900 border-r border-b border-slate-700/80 rotate-45" />
+          ) : (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-px w-3 h-3 bg-slate-900 border-l border-t border-slate-700/80 rotate-45" />
+          )}
 
           {/* Header Lockup */}
           <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-800">

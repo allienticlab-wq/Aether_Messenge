@@ -115,11 +115,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick);
-    document.addEventListener('keydown', handleKeyDown);
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick);
+      document.addEventListener('keydown', handleKeyDown);
+    }, 50);
 
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
@@ -288,10 +291,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
         setIsHovered(false);
-        if (!menuOpen) {
-          setReactionPickerOpen(false);
-          setShowExtendedEmojis(false);
-        }
       }}
     >
       {/* Pinned Marker Banner */}

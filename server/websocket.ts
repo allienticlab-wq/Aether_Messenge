@@ -20,8 +20,8 @@ export class WebSocketManager {
 
     server.on('upgrade', (req, socket, head) => {
       try {
-        const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-        if (url.pathname === '/ws') {
+        const url = new URL(req.url || '', 'http://localhost');
+        if (url.pathname === '/ws' || url.pathname.startsWith('/ws')) {
           this.wss!.handleUpgrade(req, socket, head, (ws) => {
             this.wss!.emit('connection', ws, req);
           });
@@ -32,7 +32,7 @@ export class WebSocketManager {
     });
 
     this.wss.on('connection', (ws: WebSocket, req) => {
-      const url = new URL(req.url || '', `http://${req.headers.host}`);
+      const url = new URL(req.url || '', 'http://localhost');
       const userId = url.searchParams.get('userId');
       const sessionId = url.searchParams.get('sessionId') || 'default_session';
 
@@ -69,12 +69,43 @@ export class WebSocketManager {
         client.isAlive = true;
       });
 
-      ws.on('message', (data) => {
+      ws.on('message', (data: Buffer | ArrayBuffer | string, isBinary: boolean) => {
+        client.isAlive = true;
         try {
-          const payload = JSON.parse(data.toString());
+          if (isBinary || data instanceof Buffer || data instanceof ArrayBuffer) {
+            const buf = Buffer.from(data as any);
+            if (buf.length > 0) {
+              const tag = buf[0];
+              if (tag === 0x01) {
+                // Binary Heartbeat PING -> respond immediately with 0x02 PONG
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(Buffer.from([0x02, 0x50, 0x4f, 0x4e, 0x47]));
+                }
+                return;
+              } else if (tag === 0x02) {
+                // Binary PONG ack
+                return;
+              } else if (tag === 0x03) {
+                // High-speed binary JSON frame starting at index 1
+                const jsonStr = buf.subarray(1).toString('utf-8');
+                const payload = JSON.parse(jsonStr);
+                this.handleClientMessage(client, payload);
+                return;
+              }
+            }
+          }
+
+          const rawStr = data.toString('utf-8');
+          const payload = JSON.parse(rawStr);
+          if (payload.type === 'ping') {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+            }
+            return;
+          }
           this.handleClientMessage(client, payload);
         } catch {
-          // malformed packet
+          // malformed packet ignored safely
         }
       });
 
@@ -230,10 +261,13 @@ export class WebSocketManager {
     const userClients = this.clients.get(userId);
     if (!userClients) return;
 
-    const data = JSON.stringify(event);
+    const jsonStr = JSON.stringify(event);
+    const textBuf = Buffer.from(jsonStr, 'utf-8');
+    const binFrame = Buffer.concat([Buffer.from([0x03]), textBuf]);
+
     for (const client of userClients) {
       if (client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(data);
+        client.ws.send(binFrame);
       }
     }
   }

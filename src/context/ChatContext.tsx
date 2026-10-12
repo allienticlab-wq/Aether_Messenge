@@ -127,12 +127,37 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const wsRef = useRef<WebSocket | null>(null);
   const activeChatRef = useRef<Chat | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
+  const heartbeatIntervalRef = useRef<any>(null);
+  const lastPongTimeRef = useRef<number>(Date.now());
   const callTimerRef = useRef<any[]>([]);
   const typingTimeoutsRef = useRef<Map<string, any>>(new Map());
 
-  const sendWebRtcSignal = (type: string, payload: any) => {
+  // High-performance binary frame sender (prefixed with 0x03)
+  const sendBinaryFrame = (type: string, payload: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, payload }));
+      try {
+        const jsonBytes = new TextEncoder().encode(JSON.stringify({ type, payload }));
+        const binPacket = new Uint8Array(1 + jsonBytes.length);
+        binPacket[0] = 0x03; // Binary JSON tag
+        binPacket.set(jsonBytes, 1);
+        wsRef.current.send(binPacket.buffer);
+      } catch {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      }
+    }
+  };
+
+  const sendWebRtcSignal = (type: string, payload: any) => {
+    sendBinaryFrame(type, payload);
+    if (currentUser) {
+      fetch('/api/calls/signal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ type, payload }),
+      }).catch(() => {});
     }
   };
 
@@ -232,18 +257,58 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
         const ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
 
         ws.onopen = () => {
           if (!isUnmounted) {
             setIsWsConnected(true);
+            lastPongTimeRef.current = Date.now();
+
+            // Client-side 12s Heartbeat PING interval for instant keepalive on mobile cellular networks & web
+            if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+            heartbeatIntervalRef.current = setInterval(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                // Check if connection is stale (> 25s without pong/packet)
+                if (Date.now() - lastPongTimeRef.current > 25000) {
+                  ws.close();
+                  return;
+                }
+                // Send high-priority 1-byte binary 0x01 PING frame
+                ws.send(new Uint8Array([0x01]).buffer);
+              }
+            }, 12000);
           }
         };
 
         ws.onmessage = (event) => {
+          lastPongTimeRef.current = Date.now();
           try {
-            const data = JSON.parse(event.data);
+            let data: any = null;
+
+            if (event.data instanceof ArrayBuffer) {
+              const u8 = new Uint8Array(event.data);
+              if (u8.length === 0) return;
+
+              const tag = u8[0];
+              if (tag === 0x02) {
+                // Binary PONG response acknowledged
+                return;
+              } else if (tag === 0x03) {
+                // High-speed binary JSON frame
+                const str = new TextDecoder().decode(u8.subarray(1));
+                data = JSON.parse(str);
+              } else {
+                const str = new TextDecoder().decode(u8);
+                data = JSON.parse(str);
+              }
+            } else if (typeof event.data === 'string') {
+              data = JSON.parse(event.data);
+            }
+
+            if (!data) return;
             const { type, payload } = data;
+            if (type === 'pong') return;
 
             switch (type) {
               case 'new_message': {
@@ -560,11 +625,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
 
         ws.onclose = () => {
+          if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
           if (!isUnmounted) {
             setIsWsConnected(false);
-            // Reconnect after 2 seconds
+            // Reconnect after 1 second for light speed recovery
             clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = setTimeout(connectWebSocket, 2000);
+            reconnectTimeoutRef.current = setTimeout(connectWebSocket, 1000);
           }
         };
 
@@ -574,7 +640,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (err) {
         if (!isUnmounted) {
           clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+          reconnectTimeoutRef.current = setTimeout(connectWebSocket, 1500);
         }
       }
     };
@@ -583,6 +649,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       isUnmounted = true;
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
         wsRef.current.close();
@@ -594,8 +661,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [currentUser?.id]);
 
-  // Background Dual-Engine Polling: Sync active conversation & chat list every 1.5 seconds
-  // Ensures 100% real-time reliability even if WebSocket disconnects or drops on mobile sleep/iframe
+  // Background Dual-Engine Polling: Sync active conversation, call offers & chat list every 1.0 second
+  // Ensures sub-second real-time reliability even if WebSocket disconnects or drops on mobile sleep/iframe
   useEffect(() => {
     if (!currentUser) return;
 
@@ -618,7 +685,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch {}
 
-      // 2. Sync active chat messages stream
+      // 2. Sync real-time active call signals for incoming ringing calls
+      try {
+        const callsRes = await fetch('/api/calls/active', { headers: { 'x-user-id': currentUser.id } });
+        if (callsRes.ok) {
+          const callsData = await callsRes.json();
+          if (callsData.activeCalls && callsData.activeCalls.length > 0) {
+            const incoming = callsData.activeCalls[0];
+            setActiveCall((prev) => {
+              if (prev && prev.id === incoming.callId) return prev;
+              return {
+                id: incoming.callId || `call_${Date.now()}`,
+                chatId: incoming.chatId,
+                initiatorId: incoming.fromUserId,
+                type: incoming.callType || 'voice',
+                status: 'ringing',
+                startedAt: incoming.createdAt || new Date().toISOString(),
+                participants: [
+                  {
+                    userId: incoming.fromUserId,
+                    displayName: incoming.fromUserName || 'Caller',
+                    avatarUrl: incoming.fromUserAvatar,
+                    audioEnabled: true,
+                    videoEnabled: incoming.callType === 'video',
+                    isScreenSharing: false,
+                  },
+                ],
+              };
+            });
+          }
+        }
+      } catch {}
+
+      // 3. Sync active chat messages stream
       const currentActive = activeChatRef.current;
       if (!currentActive) return;
 
@@ -653,7 +752,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // Silently skip background poll error
       }
-    }, 1500);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [currentUser?.id]);
@@ -860,33 +959,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const sendTyping = (isTyping: boolean, targetChatId?: string) => {
     const chatId = targetChatId || activeChatRef.current?.id;
-    if (!chatId || !currentUser || !wsRef.current) return;
-    if (wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: isTyping ? 'typing_start' : 'typing_stop',
-          payload: { chatId },
-        })
-      );
-    }
+    if (!chatId || !currentUser) return;
+    sendBinaryFrame(isTyping ? 'typing_start' : 'typing_stop', { chatId });
   };
 
   const markAsRead = async (chatId: string, messageIds?: string[]) => {
     if (!currentUser) return;
     const now = new Date().toISOString();
 
-    // 1. Broadcast over WebSocket for immediate real-time sync with all peers
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'mark_read',
-          payload: {
-            chatId,
-            messageIds: messageIds || [],
-          },
-        })
-      );
-    }
+    // 1. Broadcast over high-speed binary WebSocket frame for immediate real-time sync with all peers
+    sendBinaryFrame('mark_read', {
+      chatId,
+      messageIds: messageIds || [],
+    });
 
     // 2. Persist to REST API
     fetch(`/api/chats/${chatId}/read`, {
