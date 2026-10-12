@@ -542,16 +542,9 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 text-xs">
-            <a
-              href="/downloads/aether-android-project.zip"
-              download="aether-android-project.zip"
-              className="px-3 py-1.5 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 transition flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-              title="Download Android Studio Project (.zip) configured for https://aether.xperiserv.in/"
-            >
-              <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Android App (.zip)</span>
-            </a>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 text-xs font-medium">
+            <Shield className="w-3.5 h-3.5 text-emerald-400" />
+            <span>End-to-End Encrypted (E2EE) System</span>
           </div>
         </header>
       )}

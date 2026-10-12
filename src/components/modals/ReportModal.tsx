@@ -75,7 +75,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
             <div className="p-3 bg-rose-950/20 border border-rose-800/30 rounded-xl text-slate-300">
-              Because {currentUser.displayName} is reporting this non-E2EE conversation, authorized trust moderators will review recent messages and take disciplinary action if warranted.
+              When {currentUser.displayName} reports this conversation, the reported message snippet will be reviewed by authorized trust & safety moderators to investigate policy violations.
             </div>
 
             <div>

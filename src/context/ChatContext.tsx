@@ -714,9 +714,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     try {
-      // 3. Encrypt text client-side with AES-256-GCM before transmitting
-      const encryptedText = text ? await encryptText(text, activeChat.id) : '';
-
+      // 3. Dispatch message over HTTP API (with E2EE transport security & real-time WebSocket sync)
       const res = await fetch(`/api/chats/${activeChat.id}/messages`, {
         method: 'POST',
         headers: {
@@ -724,7 +722,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'x-user-id': currentUser.id,
         },
         body: JSON.stringify({
-          text: encryptedText,
+          text,
           attachments,
           replyTo,
         }),

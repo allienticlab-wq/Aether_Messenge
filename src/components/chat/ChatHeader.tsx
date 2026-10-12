@@ -33,7 +33,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
   const partnerProfile = partnerMember?.user;
   const isDirect = activeChat.type === 'direct';
 
-  const title = isDirect ? (partnerProfile?.displayName || activeChat.name || 'Direct Chat') : activeChat.name;
+  const title = isDirect
+    ? (partnerProfile?.displayName || (activeChat.name && activeChat.name !== 'Direct Chat' ? activeChat.name : partnerProfile?.username ? `@${partnerProfile.username}` : 'Direct Conversation'))
+    : activeChat.name;
   const avatar = isDirect ? (partnerProfile?.avatarUrl || activeChat.avatarUrl) : activeChat.avatarUrl;
   const isOnline = isDirect && partnerProfile?.isOnline;
   const verificationStatus = isDirect ? partnerProfile?.verificationStatus : undefined;
@@ -200,29 +202,29 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-1 sm:gap-1.5">
         <button
           onClick={() => startCall('voice')}
-          className="p-2 text-slate-300 hover:text-cyan-400 rounded-xl hover:bg-slate-800/80 transition"
+          className="p-2 sm:p-2.5 text-slate-300 hover:text-cyan-400 rounded-xl hover:bg-slate-800/80 active:scale-90 transition cursor-pointer"
           title="Start High-Fidelity Voice Call"
           aria-label="Start voice call"
         >
-          <Phone className="w-4 h-4" />
+          <Phone className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
         </button>
 
         <button
           onClick={() => startCall('video')}
-          className="p-2 text-slate-300 hover:text-cyan-400 rounded-xl hover:bg-slate-800/80 transition"
+          className="p-2 sm:p-2.5 text-slate-300 hover:text-cyan-400 rounded-xl hover:bg-slate-800/80 active:scale-90 transition cursor-pointer"
           title="Start HD Video Call"
           aria-label="Start video call"
         >
-          <Video className="w-4 h-4" />
+          <Video className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
         </button>
 
         {onToggleSearch && (
           <button
             onClick={onToggleSearch}
-            className="p-2 text-slate-300 hover:text-slate-100 rounded-xl hover:bg-slate-800/80 transition"
+            className="hidden sm:inline-flex p-2 sm:p-2.5 text-slate-300 hover:text-slate-100 rounded-xl hover:bg-slate-800/80 active:scale-90 transition cursor-pointer"
             title="Search inside this chat"
             aria-label="Search inside chat"
           >
@@ -232,13 +234,13 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ onBackMobile, onToggleSe
 
         <button
           onClick={() => setInfoDrawerOpen(!infoDrawerOpen)}
-          className={`p-2 rounded-xl transition ${
+          className={`p-2 sm:p-2.5 rounded-xl active:scale-90 transition cursor-pointer ${
             infoDrawerOpen ? 'bg-cyan-950 text-cyan-300 border border-cyan-800/60' : 'text-slate-300 hover:text-slate-100 hover:bg-slate-800/80'
           }`}
           title="Conversation Information & Shared Media"
           aria-label="Toggle chat info drawer"
         >
-          <PanelRight className="w-4 h-4" />
+          <PanelRight className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
         </button>
       </div>
     </div>

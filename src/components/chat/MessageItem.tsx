@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PhotoLightboxModal } from '../common/PhotoLightboxModal.js';
+import { decryptText } from '../../lib/e2ee.js';
 
 interface MessageItemProps {
   message: Message;
@@ -52,7 +53,23 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.text || '');
+  const [decryptedText, setDecryptedText] = useState<string>(message.text || '');
   const [activeLightboxImage, setActiveLightboxImage] = useState<{ url: string; name: string } | null>(null);
+
+  // Decrypt text if encrypted
+  useEffect(() => {
+    let active = true;
+    if (message.text && message.text.startsWith('e2ee:v1:')) {
+      decryptText(message.text, message.chatId).then((dec) => {
+        if (active) setDecryptedText(dec);
+      });
+    } else {
+      setDecryptedText(message.text || '');
+    }
+    return () => {
+      active = false;
+    };
+  }, [message.text, message.chatId]);
 
   // Audio Playback state for voice messages
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -452,9 +469,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </div>
             </div>
           ) : (
-            message.text && (
+            decryptedText && (
               <p className={`whitespace-pre-wrap break-words leading-relaxed select-text ${isDeleted ? 'italic opacity-60' : ''}`}>
-                {message.text}
+                {decryptedText}
               </p>
             )
           )}

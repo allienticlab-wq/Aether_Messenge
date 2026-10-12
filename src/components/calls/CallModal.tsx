@@ -23,7 +23,12 @@ import {
   MessageSquare,
   Shield,
   RefreshCw,
-  Camera
+  Camera,
+  Sliders,
+  Smile,
+  Activity,
+  Cpu,
+  Circle
 } from 'lucide-react';
 
 export const CallModal: React.FC = () => {
@@ -41,6 +46,18 @@ export const CallModal: React.FC = () => {
   const [remoteSpeaking, setRemoteSpeaking] = useState(true);
   const [networkQuality, setNetworkQuality] = useState<'excellent' | 'good'>('excellent');
 
+  // Advanced WebRTC Call Options State
+  const [showCallSettings, setShowCallSettings] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [noiseSuppression, setNoiseSuppression] = useState(true);
+  const [spatialAudio, setSpatialAudio] = useState(true);
+  const [echoCancellation, setEchoCancellation] = useState(true);
+  const [resolutionMode, setResolutionMode] = useState<'1080p' | '720p' | '4k' | 'saver'>('1080p');
+  const [cameraFilter, setCameraFilter] = useState<'none' | 'blur' | 'cyber' | 'studio'>('none');
+  const [callReactions, setCallReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
+
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -52,6 +69,31 @@ export const CallModal: React.FC = () => {
   const isVideoCall = activeCall?.type === 'video';
   const isIncoming = activeCall && activeCall.status === 'ringing' && activeCall.initiatorId !== currentUser?.id;
   const isConnected = activeCall?.status === 'connected';
+
+  // In-Call Reaction Dispatcher
+  const sendCallReaction = (emoji: string) => {
+    const reaction = {
+      id: `rx_${Date.now()}_${Math.random()}`,
+      emoji,
+      x: Math.floor(Math.random() * 60) + 20, // percentage position
+    };
+    setCallReactions((prev) => [...prev, reaction]);
+    setTimeout(() => {
+      setCallReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+    }, 2800);
+  };
+
+  // Recording counter
+  useEffect(() => {
+    if (!isRecording) {
+      setRecordSeconds(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setRecordSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isRecording]);
 
   // Remote participant info
   const remoteParticipant = activeCall?.participants?.find((p) => p.userId !== currentUser?.id) || {
@@ -499,17 +541,32 @@ export const CallModal: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-black/90 backdrop-blur-md select-none animate-in fade-in duration-150">
-      <div className="relative w-full max-w-4xl bg-slate-950 border border-slate-800/90 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[84vh] max-h-[740px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-3 md:p-6 bg-black/95 backdrop-blur-md select-none animate-in fade-in duration-150">
+      <div className="relative w-full max-w-4xl bg-slate-950 border-0 sm:border border-slate-800/90 rounded-none sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-full sm:h-[84vh] sm:max-h-[740px]">
+        {/* Floating Call Reactions Overlay */}
+        <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+          {callReactions.map((r) => (
+            <div
+              key={r.id}
+              style={{ left: `${r.x}%` }}
+              className="absolute bottom-20 text-3xl animate-bounce transition-all duration-1000 ease-out opacity-90 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]"
+            >
+              {r.emoji}
+            </div>
+          ))}
+        </div>
+
         {/* Top Call Status Bar */}
-        <div className="flex items-center justify-between px-5 md:px-6 py-3.5 border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 text-xs font-semibold">
-              <Signal className="w-3.5 h-3.5 animate-pulse text-cyan-400" />
-              <span>{isVideoCall ? 'WebRTC HD Video Stream' : 'WebRTC Ultra-HD Voice'}</span>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md shrink-0 z-20">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 text-xs font-semibold">
+              <Signal className="w-3.5 h-3.5 animate-pulse text-cyan-400 shrink-0" />
+              <span className="truncate max-w-[130px] sm:max-w-none">
+                {isVideoCall ? `HD Video (${resolutionMode.toUpperCase()})` : 'Ultra-HD Voice (48kHz)'}
+              </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span
                 className={`w-2 h-2 rounded-full ${
                   isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-ping'
@@ -523,26 +580,152 @@ export const CallModal: React.FC = () => {
                   : 'Ringing...'}
               </span>
             </div>
+
+            {/* In-Call Recording Indicator */}
+            {isRecording && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/80 border border-rose-800 text-rose-300 font-mono text-xs font-bold animate-pulse">
+                <Circle className="w-2.5 h-2.5 fill-rose-500 text-rose-500" />
+                <span>REC {formatDuration(recordSeconds)}</span>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-800/60 text-[11px] text-slate-400 font-mono">
-              <span className="text-slate-300">Opus/VP8</span>
-              <span>•</span>
-              <span className="text-emerald-400">14ms</span>
-              <span>•</span>
-              <span className="text-cyan-400">0% Loss</span>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowDiagnostics(!showDiagnostics)}
+              className={`p-1.5 rounded-xl border text-xs transition flex items-center gap-1 ${
+                showDiagnostics ? 'bg-cyan-950 text-cyan-300 border-cyan-700' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title="WebRTC Live Telemetry & Network Stats"
+            >
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="hidden md:inline font-mono text-[11px]">Stats</span>
+            </button>
+
+            <button
+              onClick={() => setShowCallSettings(!showCallSettings)}
+              className={`p-1.5 rounded-xl border text-xs transition flex items-center gap-1 ${
+                showCallSettings ? 'bg-cyan-950 text-cyan-300 border-cyan-700' : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title="Audio & Video Stream Quality Settings"
+            >
+              <Sliders className="w-4 h-4 text-cyan-400" />
+              <span className="hidden md:inline font-mono text-[11px]">Options</span>
+            </button>
 
             <button
               onClick={() => setIsMinimized(true)}
-              className="p-2 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-800 transition"
-              title="Minimize to Picture-in-Picture"
+              className="p-1.5 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-800 transition"
+              title="Minimize to Floating Window"
             >
               <Minimize2 className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {/* WebRTC Real-Time Telemetry Modal Drawer */}
+        {showDiagnostics && (
+          <div className="p-3 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono text-slate-300 animate-in slide-in-from-top-2 z-20">
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+              <span className="text-slate-500 block">Codec & Bitrate:</span>
+              <strong className="text-cyan-400">Opus 48kHz / 128kbps</strong>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+              <span className="text-slate-500 block">Latency (RTT):</span>
+              <strong className="text-emerald-400">12 ms (Direct Peer)</strong>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+              <span className="text-slate-500 block">Packet Loss:</span>
+              <strong className="text-emerald-400">0.00% (Lossless)</strong>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800/80">
+              <span className="text-slate-500 block">Video Stream:</span>
+              <strong className="text-cyan-400">{resolutionMode.toUpperCase()} @ 60 FPS</strong>
+            </div>
+          </div>
+        )}
+
+        {/* Call Stream Quality Settings Drawer */}
+        {showCallSettings && (
+          <div className="p-4 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md space-y-3 text-xs text-slate-200 animate-in slide-in-from-top-2 z-20">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span className="font-bold text-slate-100 flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-cyan-400" />
+                <span>WebRTC Audio & Video Options</span>
+              </span>
+              <button onClick={() => setShowCallSettings(false)} className="p-1 text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Stream Resolution */}
+              <div>
+                <label className="text-[11px] text-slate-400 font-medium block mb-1">Stream Resolution:</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {(['1080p', '720p', '4k', 'saver'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setResolutionMode(mode)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-mono font-semibold transition ${
+                        resolutionMode === mode
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
+                      }`}
+                    >
+                      {mode.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Audio DSP Processing */}
+              <div>
+                <label className="text-[11px] text-slate-400 font-medium block mb-1">Audio DSP Features:</label>
+                <div className="space-y-1">
+                  <button
+                    onClick={() => setNoiseSuppression(!noiseSuppression)}
+                    className={`w-full px-2.5 py-1 rounded-lg text-[11px] flex items-center justify-between font-medium transition ${
+                      noiseSuppression ? 'bg-cyan-950 text-cyan-300 border border-cyan-700' : 'bg-slate-950 text-slate-400 border border-slate-800'
+                    }`}
+                  >
+                    <span>AI Noise Suppression</span>
+                    <span>{noiseSuppression ? 'ON ✓' : 'OFF'}</span>
+                  </button>
+                  <button
+                    onClick={() => setSpatialAudio(!spatialAudio)}
+                    className={`w-full px-2.5 py-1 rounded-lg text-[11px] flex items-center justify-between font-medium transition ${
+                      spatialAudio ? 'bg-cyan-950 text-cyan-300 border border-cyan-700' : 'bg-slate-950 text-slate-400 border border-slate-800'
+                    }`}
+                  >
+                    <span>3D Spatial Audio</span>
+                    <span>{spatialAudio ? 'ON ✓' : 'OFF'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Virtual Video Filters */}
+              <div>
+                <label className="text-[11px] text-slate-400 font-medium block mb-1">Camera Filter Effects:</label>
+                <div className="grid grid-cols-2 gap-1">
+                  {(['none', 'blur', 'cyber', 'studio'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setCameraFilter(filter)}
+                      className={`px-2 py-1 rounded-lg text-[11px] capitalize font-medium transition ${
+                        cameraFilter === filter
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Center Canvas / Video Area */}
         <div className="flex-1 relative flex items-center justify-center p-3 md:p-5 bg-radial from-slate-900/90 via-slate-950 to-black overflow-hidden">

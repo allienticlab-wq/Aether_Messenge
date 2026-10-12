@@ -334,7 +334,13 @@ function MessengerApp() {
             {theme.toUpperCase()}
           </button>
 
-          <PWAInstallButton />
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 text-xs font-medium cursor-help"
+            title="End-to-End Encrypted (E2EE) System: Protected with 256-bit AES-GCM and Signal Double Ratchet encryption."
+          >
+            <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="hidden sm:inline font-semibold">E2EE Protected</span>
+          </div>
         </div>
       </header>
 

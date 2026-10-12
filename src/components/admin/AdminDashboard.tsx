@@ -1022,7 +1022,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { id: 'notifications', label: 'Broadcast Alerts', icon: Bell },
     { id: 'email', label: 'Email & SMTP', icon: Mail },
     { id: 'sms', label: 'SMS Gateway', icon: Smartphone },
-    { id: 'messagecentral', label: 'MessageCentral VerifyNow API', icon: Zap },
     { id: 'branding', label: 'White-Label Branding', icon: Sparkles },
     { id: 'flags', label: 'Feature Flags', icon: Sliders },
     { id: 'health', label: 'System Health', icon: Activity },
@@ -2138,8 +2137,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             )}
 
-            {/* MESSAGECENTRAL VERIFYNOW (INDIA OTP VERIFICATION) API DASHBOARD */}
-            {activeTab === 'messagecentral' && (
+            {/* MessageCentral Removed */}
+            {false && (
               <div className="space-y-6 max-w-5xl">
                 {/* Header & Overview */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

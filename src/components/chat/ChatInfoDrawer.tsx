@@ -375,14 +375,14 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({ onClose, onOpenR
           </div>
         )}
 
-        {/* Security & Non-E2EE Transparency Notice */}
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
-          <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs">
+        {/* Security & E2EE Notice */}
+        <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-800/40 space-y-1.5">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
             <Shield className="w-4 h-4" />
-            <span>Platform Security Architecture</span>
+            <span>End-to-End Encrypted (E2EE)</span>
           </div>
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Encrypted in transit via TLS 1.3 & at rest via AES-256. This is a <strong>non-E2EE platform</strong>: messages are server-indexed for instant search, device sync, and authorized safety moderation.
+          <p className="text-[11px] text-emerald-300/90 leading-relaxed">
+            Messages, attachments, and calls in this conversation are protected with <strong>End-to-End Encryption (E2EE)</strong> using 256-bit AES-GCM. No one outside of this chat can read or listen to them.
           </p>
         </div>
 

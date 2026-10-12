@@ -633,7 +633,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
       {/* Floating Attachments Drawer */}
       {attachmentDrawerOpen && (
-        <div className="absolute bottom-16 left-4 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md grid grid-cols-5 gap-2 w-96 text-xs">
+        <div className="absolute bottom-16 left-2 right-2 sm:left-4 sm:right-auto z-40 bg-slate-900/95 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-xl grid grid-cols-5 gap-2 max-w-md sm:w-96 text-xs animate-in slide-in-from-bottom-2">
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
@@ -641,7 +641,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
               <Image className="w-4 h-4" />
             </div>
-            <span>Photos</span>
+            <span className="text-[11px]">Photos</span>
           </button>
 
           <button
@@ -654,7 +654,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-rose-950/60 text-rose-400 border border-rose-800/50">
               <Mic className="w-4 h-4" />
             </div>
-            <span>Record</span>
+            <span className="text-[11px]">Record</span>
           </button>
 
           <button
@@ -667,7 +667,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-amber-950/60 text-amber-400 border border-amber-800/50">
               <Camera className="w-4 h-4" />
             </div>
-            <span>Camera</span>
+            <span className="text-[11px]">Camera</span>
           </button>
 
           <button
@@ -677,24 +677,27 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
             <div className="p-2.5 rounded-full bg-blue-950/60 text-blue-400 border border-blue-800/50">
               <FileText className="w-4 h-4" />
             </div>
-            <span>Document</span>
+            <span className="text-[11px]">Doc</span>
           </button>
 
           <button
-            onClick={sendLocationAttachment}
+            onClick={() => {
+              setAttachmentDrawerOpen(false);
+              setScheduleModalOpen(true);
+            }}
             className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-800/80 text-slate-300 hover:text-emerald-400 transition cursor-pointer"
           >
             <div className="p-2.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
-              <MapPin className="w-4 h-4" />
+              <Clock className="w-4 h-4" />
             </div>
-            <span>Location</span>
+            <span className="text-[11px]">Schedule</span>
           </button>
         </div>
       )}
 
       {/* Floating GIF Picker */}
       {gifPickerOpen && (
-        <div className="absolute bottom-16 left-12 z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md w-80 text-xs space-y-2">
+        <div className="absolute bottom-16 left-2 right-2 sm:left-12 sm:right-auto z-40 bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md max-w-sm sm:w-80 text-xs space-y-2">
           <div className="flex items-center justify-between pb-1 border-b border-slate-800">
             <span className="font-semibold text-slate-100 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
@@ -829,7 +832,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setGifPickerOpen(false);
                 setStickerPickerOpen(false);
               }}
-              className="p-2 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition"
+              className="p-2 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition active:scale-95"
               title="Emoji"
             >
               <Smile className="w-5 h-5" />
@@ -842,7 +845,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setGifPickerOpen(false);
                 setStickerPickerOpen(false);
               }}
-              className="p-2 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition"
+              className="p-2 text-slate-400 hover:text-slate-100 rounded-xl hover:bg-slate-800 transition active:scale-95"
               title="Attach File"
             >
               <Paperclip className="w-5 h-5" />
@@ -850,7 +853,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
 
             <button
               onClick={() => setCameraModalOpen(true)}
-              className="p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
+              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
               title="Camera (Take Photo)"
             >
               <Camera className="w-5 h-5" />
@@ -863,7 +866,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setAttachmentDrawerOpen(false);
                 setStickerPickerOpen(false);
               }}
-              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
+              className="hidden md:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition"
               title="Send GIF"
             >
               <Sparkles className="w-5 h-5" />
@@ -876,7 +879,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setAttachmentDrawerOpen(false);
                 setGifPickerOpen(false);
               }}
-              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+              className="hidden md:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer"
               title="Stickers"
             >
               <Sticker className="w-5 h-5" />
@@ -890,7 +893,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
                 setGifPickerOpen(false);
                 setStickerPickerOpen(false);
               }}
-              className="p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer relative"
+              className="hidden sm:inline-flex p-2 text-slate-400 hover:text-cyan-400 rounded-xl hover:bg-slate-800 transition cursor-pointer relative"
               title="Schedule Message for Later"
             >
               <Clock className="w-5 h-5" />
@@ -909,7 +912,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
-              className="w-full bg-transparent text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32"
+              className="w-full bg-transparent text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32 leading-relaxed"
             />
           </div>
 
@@ -919,14 +922,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({ replyMessage, 
               <>
                 <button
                   onClick={() => setScheduleModalOpen(true)}
-                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
+                  className="hidden sm:inline-flex p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 transition cursor-pointer"
                   title="Schedule Message"
                 >
                   <Clock className="w-4 h-4" />
                 </button>
                 <button
                   onClick={handleSend}
-                  className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold shadow-md shadow-cyan-950/50 transition transform hover:scale-105 cursor-pointer"
+                  className="p-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold shadow-md shadow-cyan-950/50 transition transform hover:scale-105 active:scale-95 cursor-pointer"
                   title="Send Message Now"
                 >
                   <Send className="w-4 h-4 ml-0.5" />

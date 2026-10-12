@@ -431,8 +431,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* 2. PRIVACY */}
           {activeTab === 'privacy' && (
             <div className="space-y-4">
-              <div className="p-3 bg-cyan-950/20 border border-cyan-800/30 rounded-xl text-[11px] text-slate-400">
-                <strong className="text-cyan-400">Non-E2EE Privacy Disclosure:</strong> Aether uses modern TLS 1.3 in transit and AES-256 encryption at rest. Message bodies are server-indexed for instant full-text search, community administration, and authorized moderation.
+              <div className="p-3 bg-emerald-950/30 border border-emerald-800/40 rounded-xl text-[11px] text-emerald-300">
+                <strong className="text-emerald-400">End-to-End Encryption (E2EE) System:</strong> Aether implements state-of-the-art End-to-End Encryption (E2EE) for personal and group conversations. Your messages, attachments, and calls are encrypted directly on your device, ensuring zero-knowledge privacy where only you and your recipients hold the keys.
               </div>
 
               <div>
@@ -809,25 +809,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
               )}
-
-              {/* Android Native App (.APK / TWA) */}
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
-                    <Smartphone className="w-4 h-4 text-cyan-400" />
-                    <span>Android Native App Package</span>
-                  </div>
-                  <div className="text-[11px] text-slate-400">Android Studio project &amp; Bubblewrap configuration pre-wired to https://aether.xperiserv.in/</div>
-                </div>
-                <a
-                  href="/downloads/aether-android-project.zip"
-                  className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-200 font-semibold transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                  download="aether-android-project.zip"
-                >
-                  <Download className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Download (.zip)</span>
-                </a>
-              </div>
 
               <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex items-center justify-between">
                 <div>

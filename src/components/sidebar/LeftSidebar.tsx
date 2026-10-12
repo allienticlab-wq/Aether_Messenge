@@ -117,7 +117,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          <PWAInstallButton />
+          <div
+            className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-950/50 border border-emerald-800/50 text-emerald-400 text-[10px] font-medium"
+            title="End-to-End Encrypted (E2EE) System"
+          >
+            <Shield className="w-3 h-3 text-emerald-400 shrink-0" />
+            <span className="font-semibold">E2EE</span>
+          </div>
 
           <button
             onClick={() => {

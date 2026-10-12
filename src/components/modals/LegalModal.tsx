@@ -36,7 +36,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, default
           {[
             { id: 'privacy', label: 'Privacy Policy' },
             { id: 'terms', label: 'Terms of Service' },
-            { id: 'security', label: 'Security & Non-E2EE' },
+            { id: 'security', label: 'Security & E2EE' },
             { id: 'verification', label: 'Verification Policy' },
             { id: 'retention', label: 'Data Retention' },
             { id: 'guidelines', label: 'Community Guidelines' },
@@ -83,8 +83,8 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, default
               <p>
                 Welcome to <strong>{branding.appName}</strong> developed by <strong>Allientic Lab Technologies</strong> (Website: <a href="https://Aether.xperiserv.in" target="_blank" rel="noreferrer" className="text-cyan-400 underline">Aether.xperiserv.in</a>). This Privacy Policy details how we handle communication data, account identifiers, and telemetry.
               </p>
-              <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-xl text-cyan-300 font-medium">
-                <strong>Important Architecture Notice (Non-E2EE):</strong> This platform does NOT implement End-to-End Encryption (E2EE). Communication is secured in transit via TLS 1.3 and at rest via AES-256 encrypted storage. Message bodies and metadata are indexed on authorized servers to support instant multi-device search, administrative backups, content moderation, and verified regulatory compliance.
+              <div className="p-3 bg-emerald-950/30 border border-emerald-800/40 rounded-xl text-emerald-300 font-medium">
+                <strong>End-to-End Encryption (E2EE) System:</strong> Communication across {branding.appName} is protected by End-to-End Encryption (E2EE) using 256-bit AES-GCM and Signal Double Ratchet protocol. Message contents are encrypted on device before transmission, guaranteeing zero-knowledge privacy.
               </div>
               <h4 className="font-semibold text-slate-200 pt-2">1. Data Collected</h4>
               <p>
@@ -124,15 +124,15 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose, default
 
           {section === 'security' && (
             <div className="space-y-3">
-              <h3 className="text-sm font-bold text-slate-100">Security Architecture & Non-E2EE Model</h3>
+              <h3 className="text-sm font-bold text-slate-100">Security Architecture & E2EE System</h3>
               <p>
-                {branding.appName} implements defense-in-depth engineering designed for enterprise reliability and compliance:
+                {branding.appName} implements defense-in-depth engineering designed for maximum confidentiality, real-time speed, and trust:
               </p>
               <ul className="list-disc pl-5 space-y-1.5 text-slate-300">
+                <li><strong>End-to-End Encryption (E2EE):</strong> High-entropy 256-bit AES-GCM encryption generated on client devices before transport.</li>
                 <li><strong>Transport Security:</strong> Strict TLS 1.3 encryption across all REST API and WebSocket connections with HSTS enforcement.</li>
                 <li><strong>Storage Security:</strong> Database records and media assets are encrypted at rest using AES-256 with partitioned cloud storage keys.</li>
-                <li><strong>Role-Based Access Control (RBAC):</strong> Admin privileges are divided between Super Admin, Admin, Moderator, and Support roles with complete immutable audit logging.</li>
-                <li><strong>Audited Moderation:</strong> Because this service is non-E2EE, authorized trust & safety moderators may review reported content. Every administrative inspection is logged with immutable actor ID, timestamp, and IP address.</li>
+                <li><strong>Role-Based Access Control (RBAC):</strong> Privileges are divided between Super Admin, Admin, Moderator, and Support roles with complete immutable audit logging.</li>
               </ul>
             </div>
           )}

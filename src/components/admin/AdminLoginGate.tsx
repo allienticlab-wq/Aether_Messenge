@@ -24,7 +24,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
   const { branding } = useBranding();
   const { login, currentUser, logout } = useAuth();
 
-  const [identifier, setIdentifier] = useState('swayamsiddhantn@gmail.com');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +123,7 @@ export const AdminLoginGate: React.FC<AdminLoginGateProps> = ({
                 type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="swayamsiddhantn@gmail.com or admin"
+                placeholder="Administrator Username / Email"
                 className="w-full px-3.5 py-2.5 bg-slate-950/90 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition font-mono"
                 required
                 autoFocus

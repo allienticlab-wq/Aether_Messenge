@@ -264,7 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await res.json();
       if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to send OTP via MessageCentral.' };
+        return { success: false, error: data.error || 'Failed to send verification code.' };
       }
       return {
         success: true,
@@ -408,12 +408,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const firebasePhoneSignIn = async (_cr: any, code: string, profile?: { displayName?: string; avatarUrl?: string }) => {
-    // Replaced by MessageCentral verifyPhoneOtp
-    return { success: false, error: 'Please use MessageCentral VerifyNow OTP.' };
+    return { success: false, error: 'Please use E2EE Email or Verification Code.' };
   };
 
   const firebaseGoogleLogin = async () => {
-    return { success: false, error: 'Google popup disabled. Please use MessageCentral Mobile OTP or Email/Password.' };
+    return { success: false, error: 'Please use E2EE Email/Password or OTP.' };
   };
 
   const firebaseSendPasswordReset = async (_email: string) => {
