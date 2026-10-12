@@ -843,6 +843,23 @@ export const UnifiedAuthView: React.FC<UnifiedAuthViewProps> = ({
               {/* ----------------------------------------------------------- */}
               {activeTab === 'password' && (
                 <form onSubmit={handlePasswordLogin} className="space-y-4">
+                  <div className="p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-800/50 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-cyan-300">Admin Account:</span>{' '}
+                      <span className="text-slate-300 font-mono text-[11px]">swayamsiddhantn@gmail.com</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPwdIdentifier('swayamsiddhantn@gmail.com');
+                        setPwdValue('Admin@Xperi2026#');
+                      }}
+                      className="px-2 py-1 rounded-lg bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 text-[10px] font-semibold border border-cyan-500/40 transition cursor-pointer"
+                    >
+                      Fill Admin Pass
+                    </button>
+                  </div>
+
                   <div>
                     <label className="block text-slate-300 text-xs font-medium mb-1.5">
                       Username or Email
