@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 
 export const CallModal: React.FC = () => {
-  const { activeCall, answerCall, declineCall, endCall } = useChat();
+  const { activeCall, answerCall, declineCall, endCall, lastSignal, sendWebRtcSignal } = useChat();
   const { currentUser } = useAuth();
 
   const [isMuted, setIsMuted] = useState(false);
@@ -45,6 +45,7 @@ export const CallModal: React.FC = () => {
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [remoteSpeaking, setRemoteSpeaking] = useState(true);
   const [networkQuality, setNetworkQuality] = useState<'excellent' | 'good'>('excellent');
+  const [hasRemoteVideo, setHasRemoteVideo] = useState(false);
 
   // Advanced WebRTC Call Options State
   const [showCallSettings, setShowCallSettings] = useState(false);
@@ -59,12 +60,16 @@ export const CallModal: React.FC = () => {
   const [callReactions, setCallReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
 
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const localCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameLocalRef = useRef<number | null>(null);
   const animFrameRemoteRef = useRef<number | null>(null);
+
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const offerSdpRef = useRef<any>(null);
 
   const isVideoCall = activeCall?.type === 'video';
   const isIncoming = activeCall && activeCall.status === 'ringing' && activeCall.initiatorId !== currentUser?.id;
@@ -345,7 +350,122 @@ export const CallModal: React.FC = () => {
     };
   }, [activeCall?.id, isVideoCall]);
 
-  // Remote Stream Simulation: Renders dynamic animated remote participant feed
+  // WebRTC PeerConnection and Signaling Handler
+  useEffect(() => {
+    if (!activeCall) {
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
+      setHasRemoteVideo(false);
+      return;
+    }
+
+    const initPeerConnection = async () => {
+      if (pcRef.current) return;
+
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+          ],
+        });
+        pcRef.current = pc;
+
+        // Add local media tracks if available
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((track) => {
+            pc.addTrack(track, localStreamRef.current!);
+          });
+        }
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate && activeCall) {
+            sendWebRtcSignal('webrtc_ice_candidate', {
+              callId: activeCall.id,
+              candidate: event.candidate,
+            });
+          }
+        };
+
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = event.streams[0];
+            }
+            setHasRemoteVideo(true);
+          }
+        };
+
+        // If user is caller/initiator, create offer
+        if (activeCall.initiatorId === currentUser?.id && activeCall.status === 'calling') {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendWebRtcSignal('webrtc_call_offer', {
+            callId: activeCall.id,
+            chatId: activeCall.chatId,
+            sdp: offer,
+          });
+        }
+      } catch (e) {
+        console.error('WebRTC initialization exception:', e);
+      }
+    };
+
+    initPeerConnection();
+  }, [activeCall?.id, activeCall?.status]);
+
+  // Handle incoming signaling messages
+  useEffect(() => {
+    if (!lastSignal || !activeCall) return;
+
+    const handleSignal = async () => {
+      const { type, payload } = lastSignal;
+      if (payload.callId && payload.callId !== activeCall.id) return;
+
+      if (type === 'webrtc_call_offer' && payload.sdp) {
+        offerSdpRef.current = payload.sdp;
+      } else if (type === 'webrtc_call_answer' && payload.sdp && pcRef.current) {
+        try {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        } catch (e) {
+          console.error('Failed to set remote answer SDP:', e);
+        }
+      } else if (type === 'webrtc_ice_candidate' && payload.candidate && pcRef.current) {
+        try {
+          await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        } catch (e) {
+          console.error('Failed to add ICE candidate:', e);
+        }
+      }
+    };
+
+    handleSignal();
+  }, [lastSignal]);
+
+  // Handle receiver answering call
+  useEffect(() => {
+    if (isConnected && activeCall?.initiatorId !== currentUser?.id && offerSdpRef.current && pcRef.current) {
+      const answerReceivedCall = async () => {
+        try {
+          await pcRef.current!.setRemoteDescription(new RTCSessionDescription(offerSdpRef.current));
+          const answer = await pcRef.current!.createAnswer();
+          await pcRef.current!.setLocalDescription(answer);
+          sendWebRtcSignal('webrtc_call_answer', {
+            callId: activeCall.id,
+            chatId: activeCall.chatId,
+            sdp: answer,
+          });
+        } catch (e) {
+          console.error('Failed to process answer in receiver:', e);
+        }
+      };
+      answerReceivedCall();
+    }
+  }, [isConnected]);
+
+  // Remote Stream Simulation: Renders dynamic animated remote participant feed when video track is fallback
   useEffect(() => {
     if (!activeCall || !remoteCanvasRef.current) return;
 
@@ -775,12 +895,21 @@ export const CallModal: React.FC = () => {
             <div className="w-full h-full grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* REMOTE PARTICIPANT VIDEO */}
               <div className="relative rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner group">
-                <canvas
-                  ref={remoteCanvasRef}
-                  width={640}
-                  height={480}
-                  className="w-full h-full object-cover"
-                />
+                {hasRemoteVideo ? (
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <canvas
+                    ref={remoteCanvasRef}
+                    width={640}
+                    height={480}
+                    className="w-full h-full object-cover"
+                  />
+                )}
 
                 <div className="absolute bottom-3 left-3 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-md text-xs font-medium text-slate-200 border border-white/10">
                   <div

@@ -1230,6 +1230,49 @@ apiRouter.get('/chats', requireAuth, (req: Request, res: Response) => {
   res.json({ chats: list });
 });
 
+// Real-Time Calls History & Logging
+apiRouter.get('/calls/history', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const history = (db.state.callsHistory || []).filter((c: any) =>
+    c.initiatorId === user.id ||
+    c.receiverId === user.id ||
+    (c.participants && c.participants.some((p: any) => p.userId === user.id))
+  );
+  res.json({ history });
+});
+
+apiRouter.post('/calls/log', requireAuth, (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const { id, chatId, initiatorId, receiverId, callerName, callerAvatar, receiverName, receiverAvatar, type, status, startedAt, duration } = req.body;
+
+  const logEntry = {
+    id: id || `call_${Date.now()}`,
+    chatId: chatId || '',
+    initiatorId: initiatorId || user.id,
+    receiverId: receiverId || '',
+    callerName: callerName || user.displayName,
+    callerAvatar: callerAvatar || user.avatarUrl,
+    receiverName: receiverName || 'Participant',
+    receiverAvatar: receiverAvatar || '',
+    type: type || 'voice',
+    status: status || 'connected',
+    startedAt: startedAt || new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    duration: duration || 0,
+    participants: [
+      { userId: initiatorId || user.id, displayName: callerName || user.displayName, avatarUrl: callerAvatar },
+      { userId: receiverId || 'remote', displayName: receiverName || 'Participant', avatarUrl: receiverAvatar },
+    ],
+  };
+
+  db.state.callsHistory.unshift(logEntry);
+  if (db.state.callsHistory.length > 200) {
+    db.state.callsHistory.pop();
+  }
+
+  res.json({ success: true, log: logEntry });
+});
+
 apiRouter.post('/chats', requireAuth, requireActiveCommunication, (req: Request, res: Response) => {
   const user = (req as any).user;
   const { type, name, description, avatarUrl, memberUserIds, adminOnlyMessaging } = req.body;
@@ -1409,87 +1452,7 @@ apiRouter.post('/chats/:id/messages', requireAuth, requireActiveCommunication, (
     payload: { chatId, userId: user.id, isTyping: false },
   }, user.id);
 
-  // Real-time peer / bot smart auto-reply simulation for testing
-  if (chat.type === 'direct') {
-    const partnerMember = chat.members.find(m => m.userId !== user.id);
-    if (partnerMember) {
-      const partnerUser = db.state.users.get(partnerMember.userId);
-      // Trigger auto-response if partner is offline or AI bot or for live interaction
-      setTimeout(() => {
-        // 1. Show typing indicator from partner
-        wsManager.broadcastToChat(chatId, {
-          type: 'typing_indicator',
-          payload: { chatId, userId: partnerMember.userId, isTyping: true },
-        });
 
-        setTimeout(() => {
-          // 2. Hide typing indicator
-          wsManager.broadcastToChat(chatId, {
-            type: 'typing_indicator',
-            payload: { chatId, userId: partnerMember.userId, isTyping: false },
-          });
-
-          // 3. Generate response text
-          const responses = [
-            `Hey! Received your encrypted message safely. 🔒`,
-            `Thanks for reaching out! All systems operating nominally.`,
-            `Message received! End-to-end encryption verified with AES-256-GCM.`,
-            `Glad to connect! How can I assist you today?`,
-            `Got your note! Let's continue in high-definition E2EE chat.`,
-          ];
-          const replyText = responses[Math.floor(Math.random() * responses.length)];
-          const replyNow = new Date().toISOString();
-
-          const autoMsg: Message = {
-            id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-            chatId,
-            senderId: partnerMember.userId,
-            sender: partnerUser ? db.toPublicProfile(partnerUser) : {
-              id: partnerMember.userId,
-              username: 'aether_peer',
-              displayName: 'Aether Contact',
-              avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-              role: 'user',
-              verificationStatus: 'unverified',
-              isOnline: true,
-              email: 'peer@aether.chat',
-              emailVerified: true,
-              phoneVerified: true,
-              mfaEnabled: false,
-              passkeyCount: 0,
-              lastSeen: replyNow,
-              createdAt: replyNow,
-              privacy: {
-                lastSeen: 'everyone',
-                onlineStatus: 'everyone',
-                profilePhoto: 'everyone',
-                about: 'everyone',
-                readReceipts: true,
-                typingIndicators: true,
-                callPermissions: 'everyone',
-                allowGroupInvites: 'everyone',
-              },
-            },
-            text: replyText,
-            attachments: [],
-            reactions: [],
-            deletedForUserIds: [],
-            status: 'delivered',
-            createdAt: replyNow,
-          };
-
-          db.state.messages.set(autoMsg.id, autoMsg);
-          chat.lastMessage = autoMsg;
-          chat.updatedAt = replyNow;
-
-          wsManager.broadcastToChat(chatId, {
-            type: 'new_message',
-            payload: autoMsg,
-          });
-        }, 1600);
-      }, 1000);
-    }
-  }
 
   res.json({ message: newMessage });
 });

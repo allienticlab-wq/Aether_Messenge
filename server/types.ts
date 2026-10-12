@@ -104,16 +104,7 @@ export interface ServerState {
     maxUploadSizeMb: number;
     otpExpirationMinutes: number;
   };
-  callsHistory: {
-    id: string;
-    chatId: string;
-    initiatorId: string;
-    initiatorName: string;
-    type: 'voice' | 'video';
-    durationSeconds: number;
-    status: 'completed' | 'missed' | 'declined';
-    createdAt: string;
-  }[];
+  callsHistory: any[];
   notificationsHistory: {
     id: string;
     target: string;

@@ -17,6 +17,11 @@ import {
   LogOut,
   Sparkles,
   PhoneCall,
+  Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
+  Video,
   X,
   Camera,
   QrCode
@@ -46,15 +51,21 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenLegal,
   onOpenQrScanner,
 }) => {
-  const { chats, activeChat, setActiveChat, communities, typingUsers } = useChat();
+  const { chats, activeChat, setActiveChat, communities, typingUsers, callsHistory, fetchCallsHistory, startCall } = useChat();
   const { currentUser, logout, updateProfile } = useAuth();
   const { branding } = useBranding();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<'all' | 'direct' | 'group' | 'communities' | 'starred'>('all');
+  const [filterTab, setFilterTab] = useState<'all' | 'direct' | 'group' | 'communities' | 'calls'>('all');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isSearchingServer, setIsSearchingServer] = useState(false);
   const [photoUploaderOpen, setPhotoUploaderOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (filterTab === 'calls') {
+      fetchCallsHistory();
+    }
+  }, [filterTab]);
 
   // Server-side Full-Text Search
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -169,6 +180,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             { id: 'direct', label: 'Direct' },
             { id: 'group', label: 'Groups' },
             { id: 'communities', label: 'Communities' },
+            { id: 'calls', label: 'Calls' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -185,7 +197,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
       </div>
 
-      {/* Main List Area: Search Results or Conversations List */}
+      {/* Main List Area: Search Results, Calls History, or Conversations List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {searchResults ? (
           /* Search Results Display */
@@ -244,6 +256,89 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               </div>
             )}
           </div>
+        ) : filterTab === 'calls' ? (
+          /* CALLS HISTORY LIST VIEW */
+          callsHistory.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-500 space-y-2">
+              <PhoneCall className="w-8 h-8 text-slate-600 mx-auto" />
+              <p>No recent call history.</p>
+              <p className="text-[11px] text-slate-600">Voice & Video calls with your contacts will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="px-2 py-1 flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                <span>Recent Calls</span>
+                <span>{callsHistory.length}</span>
+              </div>
+              {callsHistory.map((call: any) => {
+                const isInitiator = call.initiatorId === currentUser?.id;
+                const peerName = isInitiator
+                  ? (call.receiverName || 'Participant')
+                  : (call.callerName || 'Caller');
+                const peerAvatar = isInitiator ? call.receiverAvatar : call.callerAvatar;
+                const isMissed = call.status === 'missed' || call.status === 'declined';
+
+                const targetChat = chats.find((c) => c.id === call.chatId);
+
+                return (
+                  <div
+                    key={call.id}
+                    className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-900/60 border border-transparent transition group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={
+                          peerAvatar ||
+                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'
+                        }
+                        alt={peerName}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-800"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-100 text-xs truncate">{peerName}</div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                          {isInitiator ? (
+                            <PhoneOutgoing className="w-3 h-3 text-emerald-400 shrink-0" />
+                          ) : isMissed ? (
+                            <PhoneMissed className="w-3 h-3 text-rose-400 shrink-0" />
+                          ) : (
+                            <PhoneIncoming className="w-3 h-3 text-cyan-400 shrink-0" />
+                          )}
+                          <span className={isMissed ? 'text-rose-400 font-medium' : ''}>
+                            {call.type === 'video' ? 'Video Call' : 'Voice Call'}
+                          </span>
+                          <span>&bull;</span>
+                          <span className="text-[10px]">
+                            {new Date(call.startedAt).toLocaleDateString([], {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => startCall('voice', targetChat)}
+                        className="p-2 rounded-xl text-cyan-400 hover:text-white hover:bg-cyan-950/80 border border-cyan-900/40 transition"
+                        title={`Voice Call ${peerName}`}
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => startCall('video', targetChat)}
+                        className="p-2 rounded-xl text-emerald-400 hover:text-white hover:bg-emerald-950/80 border border-emerald-900/40 transition"
+                        title={`Video Call ${peerName}`}
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : filteredChats.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-500 space-y-2">
             <MessageSquare className="w-8 h-8 text-slate-600 mx-auto" />

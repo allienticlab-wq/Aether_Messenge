@@ -46,10 +46,14 @@ interface ChatContextType {
   createCommunity: (name: string, description: string) => Promise<Community>;
   communities: Community[];
   activeCall: CallSession | null;
-  startCall: (type: 'voice' | 'video') => void;
+  startCall: (type: 'voice' | 'video', targetChat?: Chat) => void;
   answerCall: () => void;
   declineCall: () => void;
   endCall: () => void;
+  lastSignal: { type: string; payload: any } | null;
+  sendWebRtcSignal: (type: string, payload: any) => void;
+  callsHistory: CallSession[];
+  fetchCallsHistory: () => Promise<void>;
   infoDrawerOpen: boolean;
   setInfoDrawerOpen: (open: boolean) => void;
   markAsRead: (chatId: string, messageIds?: string[]) => Promise<void>;
@@ -116,6 +120,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [communities, setCommunities] = useState<Community[]>([]);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
+  const [lastSignal, setLastSignal] = useState<{ type: string; payload: any } | null>(null);
+  const [callsHistory, setCallsHistory] = useState<CallSession[]>([]);
   const [infoDrawerOpen, setInfoDrawerOpen] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -123,6 +129,29 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const reconnectTimeoutRef = useRef<any>(null);
   const callTimerRef = useRef<any[]>([]);
   const typingTimeoutsRef = useRef<Map<string, any>>(new Map());
+
+  const sendWebRtcSignal = (type: string, payload: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type, payload }));
+    }
+  };
+
+  const fetchCallsHistory = async () => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch('/api/calls/history', {
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.history)) {
+          setCallsHistory(data.history);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch call history:', err);
+    }
+  };
 
   const clearCallTimers = () => {
     callTimerRef.current.forEach((t) => clearTimeout(t));
@@ -492,35 +521,36 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 break;
               }
 
-              case 'webrtc_call_offer': {
-                // Incoming Call from remote user
-                setActiveCall({
-                  id: payload.callId || `call_${Date.now()}`,
-                  chatId: payload.chatId,
-                  initiatorId: payload.fromUserId,
-                  type: payload.callType || 'voice',
-                  status: 'ringing',
-                  startedAt: new Date().toISOString(),
-                  participants: [
-                    {
-                      userId: payload.fromUserId,
-                      displayName: payload.fromUserName || 'Caller',
-                      audioEnabled: true,
-                      videoEnabled: payload.callType === 'video',
-                      isScreenSharing: false,
-                    },
-                  ],
-                });
-                break;
-              }
-
-              case 'webrtc_call_answer': {
-                setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
-                break;
-              }
-
-              case 'webrtc_call_end': {
-                setActiveCall(null);
+              case 'webrtc_call_offer':
+              case 'webrtc_call_answer':
+              case 'webrtc_ice_candidate':
+              case 'webrtc_call_end':
+              case 'webrtc_media_toggle': {
+                setLastSignal({ type, payload });
+                if (type === 'webrtc_call_offer') {
+                  setActiveCall({
+                    id: payload.callId || `call_${Date.now()}`,
+                    chatId: payload.chatId,
+                    initiatorId: payload.fromUserId,
+                    type: payload.callType || 'voice',
+                    status: 'ringing',
+                    startedAt: new Date().toISOString(),
+                    participants: [
+                      {
+                        userId: payload.fromUserId,
+                        displayName: payload.fromUserName || 'Caller',
+                        avatarUrl: payload.fromUserAvatar,
+                        audioEnabled: true,
+                        videoEnabled: payload.callType === 'video',
+                        isScreenSharing: false,
+                      },
+                    ],
+                  });
+                } else if (type === 'webrtc_call_answer') {
+                  setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : null));
+                } else if (type === 'webrtc_call_end') {
+                  setActiveCall(null);
+                }
                 break;
               }
             }
@@ -956,17 +986,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // High-Fidelity WebRTC Audio / Video Call Starter
-  const startCall = (type: 'voice' | 'video') => {
-    if (!activeChat || !currentUser) return;
+  const startCall = (type: 'voice' | 'video', targetChat?: Chat) => {
+    const chatToUse = targetChat || activeChat;
+    if (!chatToUse || !currentUser) return;
 
     // Find remote recipient details from chat members
-    const remoteMember = activeChat.members.find((m) => m.userId !== currentUser.id);
-    const remoteName = remoteMember?.user?.displayName || activeChat.name || 'Remote Participant';
-    const remoteAvatar = remoteMember?.user?.avatarUrl || activeChat.avatarUrl;
+    const remoteMember = chatToUse.members?.find((m) => m.userId !== currentUser.id);
+    const remoteName = remoteMember?.user?.displayName || chatToUse.name || 'Remote Participant';
+    const remoteAvatar = remoteMember?.user?.avatarUrl || chatToUse.avatarUrl;
 
     const session: CallSession = {
       id: `call_${Date.now()}`,
-      chatId: activeChat.id,
+      chatId: chatToUse.id,
       initiatorId: currentUser.id,
       type,
       status: 'calling',
@@ -995,60 +1026,70 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCall(session);
 
     // Send offer via WebSocket
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'webrtc_call_offer',
-          payload: {
-            callId: session.id,
-            chatId: activeChat.id,
-            callType: type,
-            fromUserName: currentUser.displayName,
-          },
-        })
-      );
-    }
-
-    // Auto-progress from 'calling' -> 'ringing' -> 'connected' smoothly
-    const t1 = setTimeout(() => {
-      setActiveCall((prev) => (prev && prev.status === 'calling' ? { ...prev, status: 'ringing' } : prev));
-    }, 1200);
-
-    const t2 = setTimeout(() => {
-      setActiveCall((prev) => (prev && (prev.status === 'calling' || prev.status === 'ringing') ? { ...prev, status: 'connected' } : prev));
-    }, 3200);
-
-    callTimerRef.current = [t1, t2];
+    sendWebRtcSignal('webrtc_call_offer', {
+      callId: session.id,
+      chatId: chatToUse.id,
+      callType: type,
+      fromUserName: currentUser.displayName,
+      fromUserAvatar: currentUser.avatarUrl,
+      targetUserId: remoteMember?.userId,
+    });
   };
 
   const answerCall = () => {
     if (!activeCall) return;
     clearCallTimers();
     setActiveCall({ ...activeCall, status: 'connected' });
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'webrtc_call_answer',
-          payload: { callId: activeCall.id, chatId: activeCall.chatId },
-        })
-      );
-    }
+    sendWebRtcSignal('webrtc_call_answer', {
+      callId: activeCall.id,
+      chatId: activeCall.chatId,
+    });
   };
 
   const declineCall = () => {
     clearCallTimers();
+    if (activeCall && currentUser) {
+      logCallHistory(activeCall, 'declined', 0);
+    }
     endCall();
+  };
+
+  const logCallHistory = async (session: CallSession, finalStatus: string, durationSec = 0) => {
+    if (!currentUser) return;
+    try {
+      const partner = session.participants?.find((p) => p.userId !== session.initiatorId);
+      await fetch('/api/calls/log', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({
+          id: session.id,
+          chatId: session.chatId,
+          initiatorId: session.initiatorId,
+          receiverId: partner?.userId,
+          callerName: currentUser.displayName,
+          callerAvatar: currentUser.avatarUrl,
+          receiverName: partner?.displayName || 'Participant',
+          receiverAvatar: partner?.avatarUrl,
+          type: session.type,
+          status: finalStatus,
+          startedAt: session.startedAt,
+          duration: durationSec,
+        }),
+      });
+      fetchCallsHistory();
+    } catch {}
   };
 
   const endCall = () => {
     clearCallTimers();
-    if (activeCall && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(
-        JSON.stringify({
-          type: 'webrtc_call_end',
-          payload: { callId: activeCall.id, chatId: activeCall.chatId },
-        })
-      );
+    if (activeCall) {
+      sendWebRtcSignal('webrtc_call_end', {
+        callId: activeCall.id,
+        chatId: activeCall.chatId,
+      });
     }
     setActiveCall(null);
   };
@@ -1226,6 +1267,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         answerCall,
         declineCall,
         endCall,
+        lastSignal,
+        sendWebRtcSignal,
+        callsHistory,
+        fetchCallsHistory,
         infoDrawerOpen,
         setInfoDrawerOpen,
         markAsRead,
