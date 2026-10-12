@@ -24,7 +24,9 @@ import {
   Video,
   X,
   Camera,
-  QrCode
+  QrCode,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { VerifiedBadge } from '../common/VerifiedBadge.js';
 import { PWAInstallButton } from '../common/PWAInstallButton.js';
@@ -51,21 +53,34 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onOpenLegal,
   onOpenQrScanner,
 }) => {
-  const { chats, activeChat, setActiveChat, communities, typingUsers, callsHistory, fetchCallsHistory, startCall } = useChat();
+  const {
+    chats,
+    activeChat,
+    setActiveChat,
+    communities,
+    typingUsers,
+    callsHistory,
+    missedCallsCount,
+    fetchCallsHistory,
+    deleteCallHistory,
+    clearAllCallHistory,
+    startCall,
+  } = useChat();
   const { currentUser, logout, updateProfile } = useAuth();
   const { branding } = useBranding();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'direct' | 'group' | 'communities' | 'calls'>('all');
+  const [callSubFilter, setCallSubFilter] = useState<'all' | 'missed' | 'incoming' | 'outgoing'>('all');
   const [searchResults, setSearchResults] = useState<any>(null);
   const [isSearchingServer, setIsSearchingServer] = useState(false);
   const [photoUploaderOpen, setPhotoUploaderOpen] = useState(false);
 
   React.useEffect(() => {
     if (filterTab === 'calls') {
-      fetchCallsHistory();
+      fetchCallsHistory(callSubFilter);
     }
-  }, [filterTab]);
+  }, [filterTab, callSubFilter]);
 
   // Server-side Full-Text Search
   const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,21 +200,65 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             { id: 'direct', label: 'Direct' },
             { id: 'group', label: 'Groups' },
             { id: 'communities', label: 'Communities' },
-            { id: 'calls', label: 'Calls' },
+            { id: 'calls', label: 'Calls', badge: missedCallsCount },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => { setFilterTab(tab.id as any); clearSearch(); }}
-              className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition ${
+              className={`px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition flex items-center gap-1.5 ${
                 filterTab === tab.id
                   ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-800/60'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {Boolean(tab.badge && tab.badge > 0) && (
+                <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-bold text-[9px]">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
+
+        {/* Sub-Filters for Calls Tab */}
+        {filterTab === 'calls' && (
+          <div className="flex items-center justify-between gap-1 mt-2 pt-2 border-t border-slate-800/50 text-[10px]">
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'missed', label: 'Missed' },
+                { id: 'incoming', label: 'Incoming' },
+                { id: 'outgoing', label: 'Outgoing' },
+              ].map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => setCallSubFilter(sub.id as any)}
+                  className={`px-2 py-0.5 rounded-md font-semibold transition ${
+                    callSubFilter === sub.id
+                      ? 'bg-cyan-500 text-slate-950 font-bold'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+
+            {callsHistory.length > 0 && (
+              <button
+                onClick={() => {
+                  if (confirm('Clear entire call history?')) clearAllCallHistory();
+                }}
+                className="text-slate-500 hover:text-rose-400 font-medium text-[10px] flex items-center gap-1 transition"
+                title="Clear all call history records"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main List Area: Search Results, Calls History, or Conversations List */}
@@ -272,8 +331,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           ) : (
             <div className="space-y-1">
               <div className="px-2 py-1 flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                <span>Recent Calls</span>
-                <span>{callsHistory.length}</span>
+                <span>Recent Calls ({callsHistory.length})</span>
+                {missedCallsCount > 0 && (
+                  <span className="text-rose-400 font-bold">{missedCallsCount} Missed</span>
+                )}
               </div>
               {callsHistory.map((call: any) => {
                 const isInitiator = call.initiatorId === currentUser?.id;
@@ -281,26 +342,43 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   ? (call.receiverName || 'Participant')
                   : (call.callerName || 'Caller');
                 const peerAvatar = isInitiator ? call.receiverAvatar : call.callerAvatar;
-                const isMissed = call.status === 'missed' || call.status === 'declined';
+                const isMissed = call.status === 'missed' || call.status === 'declined' || call.status === 'failed';
 
                 const targetChat = chats.find((c) => c.id === call.chatId);
+
+                // Format duration string
+                const durMin = call.duration ? Math.floor(call.duration / 60) : 0;
+                const durSec = call.duration ? call.duration % 60 : 0;
+                const durationStr = call.duration > 0 ? `${durMin > 0 ? `${durMin}m ` : ''}${durSec}s` : '';
 
                 return (
                   <div
                     key={call.id}
-                    className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-900/60 border border-transparent transition group"
+                    className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-900/60 border border-slate-900 hover:border-slate-800 transition group"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                      onClick={() => {
+                        if (targetChat) setActiveChat(targetChat);
+                      }}
+                    >
                       <img
                         src={
                           peerAvatar ||
                           'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&h=200&q=80'
                         }
                         alt={peerName}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-800"
+                        className="w-10 h-10 rounded-full object-cover border border-slate-800 shrink-0"
                       />
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-100 text-xs truncate">{peerName}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-slate-100 text-xs truncate flex items-center gap-1.5">
+                          <span>{peerName}</span>
+                          {durationStr && (
+                            <span className="text-[10px] text-emerald-400 font-mono font-normal">
+                              ({durationStr})
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
                           {isInitiator ? (
                             <PhoneOutgoing className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -310,33 +388,40 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                             <PhoneIncoming className="w-3 h-3 text-cyan-400 shrink-0" />
                           )}
                           <span className={isMissed ? 'text-rose-400 font-medium' : ''}>
-                            {call.type === 'video' ? 'Video Call' : 'Voice Call'}
+                            {call.type === 'video' ? 'Video' : 'Voice'} &bull; {call.status}
                           </span>
                           <span>&bull;</span>
                           <span className="text-[10px]">
-                            {new Date(call.startedAt).toLocaleDateString([], {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
+                            {new Date(call.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
                       <button
                         onClick={() => startCall('voice', targetChat)}
-                        className="p-2 rounded-xl text-cyan-400 hover:text-white hover:bg-cyan-950/80 border border-cyan-900/40 transition"
+                        className="p-1.5 rounded-xl text-cyan-400 hover:text-white hover:bg-cyan-950/80 border border-cyan-900/40 transition"
                         title={`Voice Call ${peerName}`}
                       >
                         <Phone className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => startCall('video', targetChat)}
-                        className="p-2 rounded-xl text-emerald-400 hover:text-white hover:bg-emerald-950/80 border border-emerald-900/40 transition"
+                        className="p-1.5 rounded-xl text-emerald-400 hover:text-white hover:bg-emerald-950/80 border border-emerald-900/40 transition"
                         title={`Video Call ${peerName}`}
                       >
                         <Video className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteCallHistory(call.id);
+                        }}
+                        className="p-1.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition"
+                        title="Delete call entry"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

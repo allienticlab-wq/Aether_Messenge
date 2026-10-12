@@ -53,7 +53,11 @@ interface ChatContextType {
   lastSignal: { type: string; payload: any } | null;
   sendWebRtcSignal: (type: string, payload: any) => void;
   callsHistory: CallSession[];
-  fetchCallsHistory: () => Promise<void>;
+  missedCallsCount: number;
+  fetchCallsHistory: (filter?: string) => Promise<void>;
+  deleteCallHistory: (callId: string) => Promise<void>;
+  clearAllCallHistory: () => Promise<void>;
+  fetchTurnCredentials: () => Promise<{ iceServers: RTCIceServer[]; ttl: number }>;
   infoDrawerOpen: boolean;
   setInfoDrawerOpen: (open: boolean) => void;
   markAsRead: (chatId: string, messageIds?: string[]) => Promise<void>;
@@ -161,10 +165,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const fetchCallsHistory = async () => {
+  const [missedCallsCount, setMissedCallsCount] = useState<number>(0);
+
+  const fetchCallsHistory = async (filter = 'all') => {
     if (!currentUser) return;
     try {
-      const res = await fetch('/api/calls/history', {
+      const res = await fetch(`/api/calls/history?filter=${encodeURIComponent(filter)}`, {
         headers: { 'x-user-id': currentUser.id },
       });
       if (res.ok) {
@@ -172,10 +178,55 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (Array.isArray(data.history)) {
           setCallsHistory(data.history);
         }
+        if (typeof data.missedCount === 'number') {
+          setMissedCallsCount(data.missedCount);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch call history:', err);
     }
+  };
+
+  const deleteCallHistory = async (callId: string) => {
+    if (!currentUser || !callId) return;
+    try {
+      await fetch(`/api/calls/history/${callId}`, {
+        method: 'DELETE',
+        headers: { 'x-user-id': currentUser.id },
+      });
+      setCallsHistory((prev) => prev.filter((c) => c.id !== callId));
+    } catch (err) {
+      console.error('Failed to delete call history item:', err);
+    }
+  };
+
+  const clearAllCallHistory = async () => {
+    if (!currentUser) return;
+    try {
+      await fetch('/api/calls/history', {
+        method: 'DELETE',
+        headers: { 'x-user-id': currentUser.id },
+      });
+      setCallsHistory([]);
+      setMissedCallsCount(0);
+    } catch (err) {
+      console.error('Failed to clear call history:', err);
+    }
+  };
+
+  const fetchTurnCredentials = async (): Promise<{ iceServers: RTCIceServer[]; ttl: number }> => {
+    if (!currentUser) return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }], ttl: 86400 };
+    try {
+      const res = await fetch('/api/calls/turn-credentials', {
+        method: 'POST',
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch {}
+    return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }], ttl: 86400 };
   };
 
   const clearCallTimers = () => {
@@ -1387,7 +1438,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         lastSignal,
         sendWebRtcSignal,
         callsHistory,
+        missedCallsCount,
         fetchCallsHistory,
+        deleteCallHistory,
+        clearAllCallHistory,
+        fetchTurnCredentials,
         infoDrawerOpen,
         setInfoDrawerOpen,
         markAsRead,

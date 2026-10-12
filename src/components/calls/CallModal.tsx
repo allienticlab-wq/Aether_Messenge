@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 
 export const CallModal: React.FC = () => {
-  const { activeCall, answerCall, declineCall, endCall, lastSignal, sendWebRtcSignal } = useChat();
+  const { activeCall, answerCall, declineCall, endCall, lastSignal, sendWebRtcSignal, fetchTurnCredentials } = useChat();
   const { currentUser } = useAuth();
 
   const [isMuted, setIsMuted] = useState(false);
@@ -365,8 +365,9 @@ export const CallModal: React.FC = () => {
       if (pcRef.current) return;
 
       try {
+        const { iceServers } = await fetchTurnCredentials();
         const pc = new RTCPeerConnection({
-          iceServers: [
+          iceServers: iceServers || [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
           ],

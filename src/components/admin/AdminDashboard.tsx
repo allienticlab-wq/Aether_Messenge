@@ -726,12 +726,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDownloadFullDatabase = () => {
-    const a = document.createElement('a');
-    a.href = `/api/admin/database/export?userId=${currentUser?.id || 'usr_admin'}`;
-    a.download = `aether_database_${Date.now()}.json`;
-    a.click();
-    setActionMessage('Database JSON archive downloaded successfully.');
+  const handleDownloadFullDatabase = async () => {
+    try {
+      const res = await fetch(`/api/admin/database/export?userId=${currentUser?.id || 'usr_admin'}`, {
+        headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setActionMessage(`Database download failed: ${err.error || res.statusText}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aether_database_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setActionMessage('Database JSON archive downloaded successfully.');
+    } catch (err: any) {
+      setActionMessage(`Database download error: ${err.message}`);
+    }
   };
 
   const handleRestoreSnapshot = async (snapshotId: string) => {
@@ -802,13 +819,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDownloadEvidencePackage = (noticeNum?: string) => {
+  const handleDownloadEvidencePackage = async (noticeNum?: string) => {
     const num = noticeNum || activeGovNotice?.noticeNumber || 'GOV-DEFAULT';
-    const a = document.createElement('a');
-    a.href = `/api/admin/gov/export-evidence?noticeNumber=${encodeURIComponent(num)}&userId=${currentUser?.id || 'usr_admin'}`;
-    a.download = `aether_gov_evidence_${num}_${Date.now()}.json`;
-    a.click();
-    setActionMessage('Government Legal Disclosure Evidence Package exported.');
+    try {
+      const res = await fetch(`/api/admin/gov/export-evidence?noticeNumber=${encodeURIComponent(num)}&userId=${currentUser?.id || 'usr_admin'}`, {
+        headers: { 'x-user-id': currentUser?.id || 'usr_admin' },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setActionMessage(`Evidence export failed: ${err.error || res.statusText}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `aether_gov_evidence_${num}_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setActionMessage('Government Legal Disclosure Evidence Package exported.');
+    } catch (err: any) {
+      setActionMessage(`Evidence export error: ${err.message}`);
+    }
   };
 
   const handleUploadAndRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1884,18 +1918,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <p className="text-[11px] text-slate-400">High-fidelity WebRTC voice & video signaling performance.</p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
-                    <span className="text-slate-400 text-[11px]">Signaling Gateway</span>
-                    <div className="text-lg font-bold text-emerald-400 mt-1">ONLINE (WebSocket)</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Total Calls Logged</span>
+                    <div className="text-xl font-bold text-cyan-400 font-mono mt-1">{callsData.metrics?.totalCalls || callsData.history?.length || 0}</div>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
-                    <span className="text-slate-400 text-[11px]">STUN Server Status</span>
-                    <div className="text-lg font-bold text-cyan-400 mt-1">Google STUN Ready</div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Completed Calls</span>
+                    <div className="text-xl font-bold text-emerald-400 font-mono mt-1">{callsData.metrics?.completedCalls || 0}</div>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800">
-                    <span className="text-slate-400 text-[11px]">Active Calls</span>
-                    <div className="text-lg font-bold text-slate-100 mt-1">{callsData.activeCalls}</div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Missed / Rejected</span>
+                    <div className="text-xl font-bold text-rose-400 font-mono mt-1">{callsData.metrics?.missedCalls || 0}</div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">TURN Relayed Est.</span>
+                    <div className="text-xl font-bold text-amber-400 font-mono mt-1">{callsData.metrics?.turnUsageMb || 0} MB</div>
                   </div>
                 </div>
 
